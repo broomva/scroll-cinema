@@ -94,6 +94,13 @@ Asserts first interaction costs one poster (not the whole payload) and that
 worst-case resident memory stays bounded. Exits non-zero when a budget is
 exceeded, so it can gate CI.
 
+First interaction is charged as the **largest** poster, not poster 0: the
+runtime assigns `poster.src` only from the first tick, using the real scroll
+position, so a deep link never pays for poster 0 and then discards it. That
+single-request behaviour is verified in the browser, not assumed — the harness
+reads `performance.getEntriesByType("resource")` before any scroll and requires
+exactly one image.
+
 ## Development
 
 ```bash
@@ -111,7 +118,8 @@ structurally cannot, running **both** strategies in headless Chrome and assertin
 | resident set ≤ 3 | retention bound, completed clips |
 | in-flight ≤ 3 | retention bound, *downloads* — a fast traversal must not buffer the story |
 | total `src` binds ≈ clip count | **decoder thrash.** A slot-collision bug rebinds every frame; measured 5 when correct, 247 when reintroduced |
-| no visible unsettled decoder | a revealed clip must have presented the requested frame, not frame 0 |
+| no visible unsettled decoder | a revealed clip must have presented a frame from its source, not frame 0. **Known-weak, see limitations** |
+| exactly 1 poster before first scroll | the first-interaction claim, measured via browser **resource timing** — independent of any runtime flag |
 | stream run served Range requests | otherwise the 206 path is untested and the run proves nothing about streaming |
 
 Both are required — see `demo/README.md` for supplying assets.

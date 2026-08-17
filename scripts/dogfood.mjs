@@ -181,6 +181,7 @@ console.log(`peak resident-union: ${pk.union}  (completed + in-flight; bound is 
 console.log(`peak in-flight    : ${pk.inFlight}`);
 console.log(`peak live objectURLs: ${pk.live}  (bound is 3)`);
 console.log(`visible-unpresented: ${pk.visibleUnpresented}  (must be 0)`);
+console.log(`posters before scroll: ${report.postersBeforeScroll}  (must be 1 — resource timing, independent of runtime flags)`);
 console.log(`Range requests    : ${rangeRequests}`);
 
 // In stream mode the runtime seeks over HTTP, so the dense-GOP range behaviour

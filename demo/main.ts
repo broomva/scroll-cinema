@@ -98,6 +98,17 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
   report.firstClipLoaded = loaded;
   if (!loaded) failures.push("no clip ever became resident");
 
+  // Independent evidence for the first-interaction claim: the browser's own
+  // resource timing, not one of the runtime's flags. Counted BEFORE any scroll,
+  // so it is exactly what a visitor pays to see the first frame.
+  const postersBeforeScroll = performance
+    .getEntriesByType("resource")
+    .filter((e) => e.name.endsWith(".webp")).length;
+  report.postersBeforeScroll = postersBeforeScroll;
+  if (postersBeforeScroll > 1) {
+    failures.push(`${postersBeforeScroll} posters fetched before any scroll (expected 1)`);
+  }
+
   const samples: ReturnType<ScrollCinema["debug"]>[] = [];
   const max = document.documentElement.scrollHeight - window.innerHeight;
 

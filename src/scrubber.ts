@@ -146,7 +146,10 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   poster.className = "sc-poster";
   poster.alt = "";
   poster.decoding = "async";
-  poster.src = posters[0];
+  // Deliberately NOT set here. On a restored or deep-linked scroll position the
+  // first tick immediately swaps to a different scene, so assigning poster 0
+  // eagerly costs a whole image request that is discarded -- which is exactly
+  // what made `budget.mjs` charge two posters for first interaction.
   Object.assign(poster.style, {
     position: "absolute",
     inset: "0",
@@ -399,6 +402,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     // follow — distinct from `segment`, which is the clip being scrubbed.
     const exact = easedProgress * clips.length;
     const scene = Math.min(posters.length - 1, Math.max(0, Math.round(exact)));
+    // lastScene starts at -1, so the first tick always assigns exactly one poster.
     if (scene !== lastScene) {
       lastScene = scene;
       poster.src = posters[scene];

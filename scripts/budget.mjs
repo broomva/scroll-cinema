@@ -86,12 +86,12 @@ const size = (f) => statSync(f).size;
 const clipSizes = clips.map(size);
 const posterSizes = posters.map(size);
 
-// First interaction needs one poster -- but not necessarily poster 0. A restored
-// or deep-linked scroll position starts mid-chain, and the runtime swaps the
-// poster on the first frame, so the worst case is the LARGEST poster (plus
-// poster 0, which is always requested first). Budgeting only poster 0 would let
-// a multi-megabyte poster elsewhere in the chain pass unnoticed.
-const firstInteraction = posterSizes[0] + Math.max(...posterSizes.slice(1), 0);
+// First interaction costs exactly ONE poster: the runtime assigns poster.src
+// only from the first tick, using the real scroll position, so a deep link does
+// not pay for poster 0 and then discard it. The worst case is therefore the
+// LARGEST poster -- budgeting only poster 0 would let a heavy poster elsewhere
+// in the chain pass unnoticed.
+const firstInteraction = Math.max(...posterSizes);
 
 // Worst case memory is the largest `maxResident` clips held at once.
 const worstResident = [...clipSizes]
@@ -106,9 +106,7 @@ const kb = (b) => (b / 1e3).toFixed(1);
 const checks = [
   {
     name: `first interaction <= ${firstInteractionKb} KB`,
-    actual:
-      `${kb(firstInteraction)} KB worst case ` +
-      `(poster0 ${kb(posterSizes[0])} KB + largest other ${kb(Math.max(...posterSizes.slice(1), 0))} KB)`,
+    actual: `${kb(firstInteraction)} KB (largest of ${posterSizes.length} posters; exactly one is fetched)`,
     pass: firstInteraction <= firstInteractionKb * 1e3,
   },
   {
