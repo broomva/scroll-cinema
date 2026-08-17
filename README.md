@@ -121,6 +121,25 @@ package passed 33 unit tests *and* a green browser run while binding the wrong
 clip to a decoder on every frame. The harness had asserted `held.length <= 2`,
 which two slots satisfy unconditionally.
 
+## Known limitations — open findings, do not treat as production-ready
+
+Four cross-model review rounds took this from 2/10 to 6/10. The final verdict was
+still **SHIP: NO**, and the fix budget (3 rounds) is spent, so these are recorded
+rather than fixed. Tracked in BRO-2168.
+
+| # | Finding | Status |
+|---|---|---|
+| 1 | **The residency bound can transiently overshoot.** After a `RESUME_GAP` snap (backgrounded tab), progress can jump several segments; downloads start for the new pair while the old pair is still *held* and therefore not evictable, so `resident ∪ inFlight` can reach 4 against a bound of 3. The smooth sweep in the harness never takes the snap path. | open |
+| 2 | **The `visible-unpresented` harness assertion is tautological.** `presented` is what gates opacity, so asserting "opacity > 0 implies presented" cannot fail. It must compare against an independent signal (e.g. a `requestVideoFrameCallback` frame count) to mean anything. | open |
+| 3 | **Retry accounting never resets on success**, and retries have no backoff — three isolated transient failures across a session permanently disable a segment, and a brief outage can burn all three on consecutive frames. | open |
+| 4 | **`maxResident` is documented as a maximum but silently raised to 3.** Either reject values below the floor or document the minimum. | open |
+
+Verified sound: the two-decoder invariant, decoder-thrash bound (5 binds for 5
+clips; 247 when the collision is reintroduced), object-URL dedup and revocation,
+abort-on-destroy, frame-rate-independent easing, the temporal end guard, and
+every `conform.sh` / `budget.mjs` assertion (each proven against input it must
+reject as well as input it must accept).
+
 ## What was fixed relative to the reference
 
 | # | Reference behaviour | Here |
