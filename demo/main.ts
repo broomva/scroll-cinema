@@ -141,7 +141,7 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
   // A VISIBLE decoder must have presented a frame from its current source.
   // (Earlier this value was computed and never asserted on, so it could not
   // fail -- an absent verifier reads as green.)
-  // KNOWN-WEAK (BRO-2168): `presented` is also what gates opacity, so this
+  // KNOWN-WEAK (BRO-2173): `presented` is also what gates opacity, so this
   // comparison is close to tautological and cannot fail on its own. It is kept
   // as a cheap tripwire for a future refactor that decouples the two, but it is
   // NOT evidence that reveal timing is correct. An independent signal

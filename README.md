@@ -125,7 +125,7 @@ which two slots satisfy unconditionally.
 
 Four cross-model review rounds took this from 2/10 to 6/10. The final verdict was
 still **SHIP: NO**, and the fix budget (3 rounds) is spent, so these are recorded
-rather than fixed. Tracked in BRO-2168.
+rather than fixed. Tracked in BRO-2173.
 
 | # | Finding | Status |
 |---|---|---|
