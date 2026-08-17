@@ -34,11 +34,15 @@ const label = document.querySelector<HTMLElement>("#scene");
 
 if (!stage || !track) throw new Error("demo: missing #stage or #track");
 
+const strategy =
+  new URLSearchParams(location.search).get("strategy") === "stream" ? "stream" : "blob";
+
 const cinema = createScrollCinema({
   clips: CLIPS,
   posters: POSTERS,
   stage,
   track,
+  strategy,
   onScene: (scene) => {
     if (label) label.textContent = `${String(scene + 1).padStart(2, "0")} · ${SCENES[scene]}`;
   },
@@ -64,7 +68,7 @@ async function waitForFirstClip(c: ScrollCinema, timeoutMs = 30_000): Promise<bo
 }
 
 async function runSelfTest(c: ScrollCinema): Promise<void> {
-  const report: Record<string, unknown> = {};
+  const report: Record<string, unknown> = { strategy };
   const failures: string[] = [];
 
   const loaded = await waitForFirstClip(c);
@@ -114,11 +118,24 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
     failures.push(`object-URL leak: ${maxLive} live URLs (residency bound is 3)`);
   }
 
-  // A revealed decoder must be showing the frame that was asked for.
-  const revealedUnsettled = samples.filter(
-    (s) => s.held[s.segment % 2] === s.segment && !s.settled[s.segment % 2],
+  // A VISIBLE decoder must have genuinely presented the frame that was asked
+  // for. The previous version of this check computed a number and never
+  // asserted on it, so it could not fail -- an absent verifier reads as green.
+  const revealedUnsettled = samples.filter((s) =>
+    s.opacity.some((o, slot) => o > 0 && !s.settled[slot]),
   ).length;
   report.revealedUnsettled = revealedUnsettled;
+  if (revealedUnsettled > 0) {
+    failures.push(`${revealedUnsettled} samples revealed an unsettled decoder`);
+  }
+
+  // In-flight downloads must also stay inside the residency bound: evicting
+  // only COMPLETED clips would let a fast traversal buffer the whole story.
+  const maxInFlight = Math.max(...samples.map((s) => s.inFlight.length));
+  report.maxInFlight = maxInFlight;
+  if (maxInFlight > 3) {
+    failures.push(`${maxInFlight} concurrent downloads (residency bound is 3)`);
+  }
 
   // Scrubbing must actually move the decoder, not merely change state.
   const distinctTimes = new Set(

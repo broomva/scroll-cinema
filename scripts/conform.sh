@@ -125,12 +125,13 @@ verify() {
   maxgap=$(ffprobe -v error -select_streams v:0 -show_entries frame=key_frame \
     -of csv=p=0 "$f" | tr -d ',' \
     | awk 'BEGIN{last=-1;max=0;n=0}
-           {if($1==1){ if(last<0){ if(n>max) max=n } else { d=n-last; if(d>max) max=d } last=n } n++}
+           {if($1==1){ if(last<0){ if(n>max) max=n } else { d=n-last-1; if(d>max) max=d } last=n } n++}
            END{ if(last<0){ print n+0 } else { d=n-1-last; if(d>max) max=d; print max+0 } }')
-  if [ "$maxgap" -le "$GOP" ]; then
-    printf '  ok   max non-keyframe run %s frames (<= %s)\n' "$maxgap" "$GOP"
+  local decode_cost=$((maxgap + 1))
+  if [ "$decode_cost" -le "$GOP" ]; then
+    printf '  ok   worst-case seek decode %s frames (<= %s)\n' "$decode_cost" "$GOP"
   else
-    printf '  FAIL max non-keyframe run %s frames (expected <= %s)\n' "$maxgap" "$GOP"; fail=1
+    printf '  FAIL worst-case seek decode %s frames (expected <= %s)\n' "$decode_cost" "$GOP"; fail=1
   fi
 
   # moov must precede mdat or the browser cannot seek without fetching the tail.
@@ -143,7 +144,7 @@ path = sys.argv[1]
 out = []
 with open(path, "rb") as fh:
     off = 0
-    while len(out) < 12:
+    while True:
         fh.seek(off)
         hdr = fh.read(8)
         if len(hdr) < 8:
@@ -151,6 +152,9 @@ with open(path, "rb") as fh:
         size = struct.unpack(">I", hdr[:4])[0]
         typ = hdr[4:8].decode("latin1", "replace")
         out.append(typ)
+        # Stop as soon as the ordering question is answered, not at a fixed count.
+        if "moov" in out and "mdat" in out:
+            break
         if size == 1:
             ext = fh.read(8)
             if len(ext) < 8:

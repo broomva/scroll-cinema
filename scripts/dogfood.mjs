@@ -18,6 +18,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { extname, join, normalize, resolve } from "node:path";
 
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
+const STRATEGY = process.argv.includes("--stream") ? "stream" : "blob";
 const DEMO = join(ROOT, "demo");
 const PORT = 8788 + (process.pid % 200);
 
@@ -58,6 +59,8 @@ const reportPromise = new Promise((r) => {
   resolveReport = r;
 });
 
+let rangeRequests = 0;
+
 const server = createServer((req, res) => {
   const url = (req.url ?? "/").split("?")[0];
 
@@ -85,6 +88,7 @@ const server = createServer((req, res) => {
   // range-seeking the dense-GOP encode exists to make cheap.
   const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? "");
   if (range) {
+    rangeRequests++;
     const start = range[1] === "" ? body.length - Number(range[2]) : Number(range[1]);
     const end = range[1] === "" || range[2] === "" ? body.length - 1 : Number(range[2]);
     if (!Number.isFinite(start) || start < 0 || start > end || end >= body.length) {
@@ -123,7 +127,7 @@ const args = [
   "--autoplay-policy=no-user-gesture-required",
   "--window-size=1280,900",
   `--user-data-dir=${join(ROOT, "node_modules", ".dogfood-profile")}`,
-  `http://127.0.0.1:${PORT}/index.html?selftest=1`,
+  `http://127.0.0.1:${PORT}/index.html?selftest=1&strategy=${STRATEGY}`,
 ];
 
 const keep = process.argv.includes("--keep");
@@ -157,7 +161,8 @@ try {
 }
 
 const s = report.samples ?? [];
-console.log(`\nfirst clip loaded : ${report.firstClipLoaded}`);
+console.log(`\nstrategy          : ${report.strategy}`);
+console.log(`first clip loaded : ${report.firstClipLoaded}`);
 console.log(`samples           : ${s.length}`);
 console.log(`segments visited  : ${(report.segments ?? []).join(" -> ")}`);
 console.log(`distinct time states: ${report.distinctTimeStates}`);
@@ -171,7 +176,15 @@ console.log(
 );
 console.log(`total src binds   : ${report.totalBinds}  (thrash detector; expect ~clip count)`);
 console.log(`max live objectURLs: ${report.maxLiveUrls}  (leak detector; bound is 3)`);
-console.log(`in-flight (final) : ${JSON.stringify(s[s.length - 1]?.inFlight ?? [])}`);
+console.log(`max in-flight     : ${report.maxInFlight}  (residency bound is 3)`);
+console.log(`revealed unsettled: ${report.revealedUnsettled}  (must be 0)`);
+console.log(`Range requests    : ${rangeRequests}`);
+
+// In stream mode the runtime seeks over HTTP, so the dense-GOP range behaviour
+// must actually have been exercised -- otherwise this run proves nothing about it.
+if (STRATEGY === "stream" && rangeRequests === 0) {
+  fail("stream run served zero Range requests — the range path was not exercised");
+}
 
 if (!report.pass) {
   console.error(`\nFAIL (${report.failures.length}):`);

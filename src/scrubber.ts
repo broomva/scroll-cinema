@@ -69,6 +69,8 @@ export interface ScrollCinemaDebug {
   inFlight: number[];
   /** currentTime of each slot, for asserting that scrubbing actually moves. */
   times: number[];
+  /** Rendered opacity per slot. A slot may only be visible once settled. */
+  opacity: number[];
   /** Cumulative `src` assignments per slot. Thrash detector: should stay low. */
   binds: number[];
   /** Object URLs created minus revoked. Leak detector: bounded by maxResident. */
@@ -129,6 +131,9 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   // The poster is painted first and never removed. It is what makes the page
   // interactive immediately: scroll works against stills while clips arrive,
   // and it is the entire experience under reduced motion.
+  /** Whether a slot has completed a seek since being bound; gates reveal. */
+  const settled: boolean[] = [false, false];
+
   const poster = doc.createElement("img");
   poster.className = "sc-poster";
   poster.alt = "";
@@ -160,6 +165,13 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         objectFit: "cover",
         opacity: "0",
       });
+      // `seeked` is the only honest signal that the requested frame is decoded
+      // and presented. Reading back `currentTime` after assigning it proves
+      // nothing -- the property reflects the REQUEST immediately.
+      const slot = i;
+      v.addEventListener("seeked", () => {
+        settled[slot] = true;
+      });
       stage.appendChild(v);
       videos.push(v);
     }
@@ -168,15 +180,22 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   // --- state --------------------------------------------------------------
   /** Which segment each decoder slot holds. */
   const held: (number | null)[] = [null, null];
-  /** Whether that slot has reached the requested frame; gates reveal. */
-  const settled: boolean[] = [false, false];
   const binds: number[] = [0, 0];
   /** segment -> object URL (or plain URL in stream mode). */
   const cache = new Map<string, string>();
   /** segment -> in-flight fetch, so contention cannot start duplicate loads. */
   const inFlight = new Map<number, Promise<string | null>>();
-  const aborts = new Set<AbortController>();
+  /** segment -> abort handle, so a fetch can be cancelled when it leaves the window. */
+  const controllers = new Map<number, AbortController>();
+  /** Segments whose fetch failed permanently. Without this, a 404 is retried
+   *  on every animation frame -- roughly 60 requests a second, forever. */
+  const failed = new Set<number>();
   let liveUrls = 0;
+
+  // Two clips are bound during a crossfade and held segments are never evicted,
+  // so a retention budget below 2 cannot be honoured and would misreport the
+  // memory bound it documents.
+  const retain = Math.max(2, Math.trunc(maxResident) || 2);
 
   let easedProgress = 0;
   let lastScene = -1;
@@ -224,8 +243,10 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       return Promise.resolve(url);
     }
 
+    if (failed.has(segment)) return Promise.resolve(null);
+
     const controller = new AbortController();
-    aborts.add(controller);
+    controllers.set(segment, controller);
     const job = (async (): Promise<string | null> => {
       try {
         const res = await fetch(clips[segment], { signal: controller.signal });
@@ -239,11 +260,16 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         liveUrls++;
         cache.set(key(segment), url);
         return url;
-      } catch {
+      } catch (err) {
         // Degrade, never block: the poster stays up and the page still works.
+        // An abort is a deliberate cancellation, not a broken asset, so it must
+        // not poison the segment for the rest of the session.
+        if (!(err instanceof DOMException && err.name === "AbortError")) {
+          failed.add(segment);
+        }
         return null;
       } finally {
-        aborts.delete(controller);
+        controllers.delete(segment);
         inFlight.delete(segment);
       }
     })();
@@ -285,13 +311,25 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   }
 
   function evict(keep: number[]): void {
-    if (strategy === "stream") return;
+    // Cancel downloads that have left the window. Without this the memory bound
+    // is only a bound on COMPLETED clips: a fast traversal can leave many
+    // `res.blob()` calls buffering whole clips concurrently.
+    for (const [segment, controller] of controllers) {
+      if (keep.includes(segment)) continue;
+      controller.abort();
+      controllers.delete(segment);
+    }
+    // Prune in BOTH modes. Stream mode caches plain URLs rather than blobs, so
+    // there is nothing to revoke -- but letting the map grow unbounded would
+    // make the reported residency a fiction.
     for (const [k, url] of cache) {
       const segment = Number(k);
       if (keep.includes(segment)) continue;
       if (held[0] === segment || held[1] === segment) continue;
-      URL.revokeObjectURL(url);
-      liveUrls--;
+      if (strategy !== "stream") {
+        URL.revokeObjectURL(url);
+        liveUrls--;
+      }
       cache.delete(k);
     }
   }
@@ -315,13 +353,15 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     }
 
     const t = timeFor(local, v.duration);
-    if (!v.seeking && shouldSeek(v.currentTime, t, seekEpsilon)) {
-      v.currentTime = t;
-    }
-    // Reveal only once the decoder is actually showing the requested frame.
+    const needsSeek = shouldSeek(v.currentTime, t, seekEpsilon);
+    if (!v.seeking && needsSeek) v.currentTime = t;
+
+    // Reveal only once the decoder has genuinely presented a requested frame.
+    // `settled` is set by the `seeked` listener, or here when no seek was ever
+    // needed (an incoming clip already sits at its start frame). Comparing
+    // `currentTime` against the value just assigned to it would be circular.
     if (!settled[slot]) {
-      if (Math.abs(v.currentTime - t) <= Math.max(seekEpsilon, 0.05))
-        settled[slot] = true;
+      if (!needsSeek && !v.seeking) settled[slot] = true;
       else {
         v.style.opacity = "0";
         return;
@@ -354,7 +394,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       // Bind ONLY current + next. `residentSet` is a retention policy and
       // includes the previous clip, which shares a slot with the next one.
       for (const s of bindTargets(segment, clips.length)) void bind(s);
-      evict(residentSet(segment, clips.length, maxResident));
+      evict(residentSet(segment, clips.length, retain));
 
       const f = fadeAt(local, fade);
       paint(segment, local, 1 - f);
@@ -373,8 +413,8 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       view.cancelAnimationFrame(rafId);
       // Cancel in-flight downloads: without this a teardown mid-load keeps
       // pulling megabytes into a page that no longer exists.
-      for (const c of aborts) c.abort();
-      aborts.clear();
+      for (const c of controllers.values()) c.abort();
+      controllers.clear();
       inFlight.clear();
       for (const v of videos) {
         v.removeAttribute("src");
@@ -403,6 +443,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         resident: [...cache.keys()].map(Number).sort((a, b) => a - b),
         inFlight: [...inFlight.keys()].sort((a, b) => a - b),
         times: videos.map((v) => v.currentTime),
+        opacity: videos.map((v) => Number(v.style.opacity || "0")),
         binds: [...binds],
         liveUrls,
         reducedMotion,
