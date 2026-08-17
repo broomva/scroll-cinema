@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>scroll-cinema demo</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #0d0f0e; color: #e6eae6; }
+  body {
+    font: 16px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+
+  /* Track height sets the gearing: ~110vh of scroll per clip, matching the
+     650vh / 5-clip ratio measured on the reference implementation. */
+  #track { height: 650vh; position: relative; }
+
+  #stage {
+    position: fixed;
+    inset: 0;
+    overflow: hidden;
+    background: #0d0f0e;
+  }
+
+  #hud {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 1.25rem 1.5rem;
+    pointer-events: none;
+    text-shadow: 0 1px 12px rgba(0,0,0,.85);
+    font-size: 0.8125rem;
+    letter-spacing: 0.04em;
+  }
+  #scene { font-variant-numeric: tabular-nums; }
+
+  #report {
+    position: fixed;
+    top: 0; left: 0;
+    max-width: 44rem;
+    max-height: 90vh;
+    overflow: auto;
+    margin: 0;
+    padding: 1rem;
+    background: rgba(0,0,0,.86);
+    font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+    white-space: pre;
+  }
+  #report:empty { display: none; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #hud::after { content: " · stills only"; }
+  }
+</style>
+</head>
+<body>
+  <div id="track">
+    <div id="stage"></div>
+  </div>
+  <div id="hud">
+    <span id="scene">01 · Origin</span>
+    <span>scroll controls the camera</span>
+  </div>
+  <pre id="report"></pre>
+  <script type="module" src="./dist/demo.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+node_modules/
+demo/dist/
+
+# Third-party validation assets. The tea-leaf clips this runtime was reverse-
+# engineered from carry no license (the source repo has `"license": null`), so
+# they are referenced locally for dogfooding and never vendored here.
+demo/assets/
