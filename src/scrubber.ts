@@ -61,7 +61,7 @@ export interface ScrollCinemaDebug {
   decoders: number;
   /** Which segment each slot currently holds. */
   held: (number | null)[];
-  /** Whether each slot has a decoder ready at the requested frame. */
+  /** Whether each slot has presented a frame from its current source. */
   settled: boolean[];
   /** Segments currently buffered. */
   resident: number[];
@@ -131,8 +131,16 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   // The poster is painted first and never removed. It is what makes the page
   // interactive immediately: scroll works against stills while clips arrive,
   // and it is the entire experience under reduced motion.
-  /** Whether a slot has completed a seek since being bound; gates reveal. */
-  const settled: boolean[] = [false, false];
+  /**
+   * Whether a slot has presented at least one frame from its CURRENT source.
+   *
+   * This is deliberately not "is showing the exact frame requested this tick".
+   * Clearing it on every scroll-driven seek would blank the video throughout a
+   * scrub, which is far worse than briefly showing a frame a few milliseconds
+   * stale. What it exists to prevent is revealing a freshly bound clip that is
+   * still sitting at time 0 while the viewer is mid-segment.
+   */
+  const presented: boolean[] = [false, false];
 
   const poster = doc.createElement("img");
   poster.className = "sc-poster";
@@ -170,7 +178,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       // nothing -- the property reflects the REQUEST immediately.
       const slot = i;
       v.addEventListener("seeked", () => {
-        settled[slot] = true;
+        presented[slot] = true;
       });
       stage.appendChild(v);
       videos.push(v);
@@ -189,13 +197,17 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   const controllers = new Map<number, AbortController>();
   /** Segments whose fetch failed permanently. Without this, a 404 is retried
    *  on every animation frame -- roughly 60 requests a second, forever. */
-  const failed = new Set<number>();
+  const failed = new Map<number, number>();
+  /** Give up on a segment only after this many non-abort failures. */
+  const MAX_ATTEMPTS = 3;
   let liveUrls = 0;
 
-  // Two clips are bound during a crossfade and held segments are never evicted,
-  // so a retention budget below 2 cannot be honoured and would misreport the
-  // memory bound it documents.
-  const retain = Math.max(2, Math.trunc(maxResident) || 2);
+  // The bound counts COMPLETED plus IN-FLIGHT clips together, because both hold
+  // memory. During a crossfade two clips are bound (and held segments are never
+  // evicted) while a third may still be downloading, so 3 is the true floor: a
+  // smaller budget could not be honoured and would misreport what it documents.
+  const RETAIN_FLOOR = 3;
+  const retain = Math.max(RETAIN_FLOOR, Math.trunc(maxResident) || RETAIN_FLOOR);
 
   let easedProgress = 0;
   let lastScene = -1;
@@ -243,7 +255,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       return Promise.resolve(url);
     }
 
-    if (failed.has(segment)) return Promise.resolve(null);
+    if ((failed.get(segment) ?? 0) >= MAX_ATTEMPTS) return Promise.resolve(null);
 
     const controller = new AbortController();
     controllers.set(segment, controller);
@@ -264,8 +276,11 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         // Degrade, never block: the poster stays up and the page still works.
         // An abort is a deliberate cancellation, not a broken asset, so it must
         // not poison the segment for the rest of the session.
+        // A network blip or a 5xx should not disable the segment for the life of
+        // the page; only give up after repeated failures. An abort is a
+        // deliberate cancellation and is not counted at all.
         if (!(err instanceof DOMException && err.name === "AbortError")) {
-          failed.add(segment);
+          failed.set(segment, (failed.get(segment) ?? 0) + 1);
         }
         return null;
       } finally {
@@ -302,7 +317,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     }
 
     held[slot] = segment;
-    settled[slot] = false;
+    presented[slot] = false;
     binds[slot]++;
     const v = videos[slot];
     v.style.opacity = "0";
@@ -360,8 +375,8 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     // `settled` is set by the `seeked` listener, or here when no seek was ever
     // needed (an incoming clip already sits at its start frame). Comparing
     // `currentTime` against the value just assigned to it would be circular.
-    if (!settled[slot]) {
-      if (!needsSeek && !v.seeking) settled[slot] = true;
+    if (!presented[slot]) {
+      if (!needsSeek && !v.seeking) presented[slot] = true;
       else {
         v.style.opacity = "0";
         return;
@@ -439,7 +454,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         progress: easedProgress,
         decoders: videos.length,
         held: [...held],
-        settled: [...settled],
+        settled: [...presented],
         resident: [...cache.keys()].map(Number).sort((a, b) => a - b),
         inFlight: [...inFlight.keys()].sort((a, b) => a - b),
         times: videos.map((v) => v.currentTime),

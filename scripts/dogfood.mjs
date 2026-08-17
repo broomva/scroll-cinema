@@ -174,10 +174,13 @@ console.log(
 console.log(
   `currentTime slot1  : ${s.map((x) => (x.times[1] ?? 0).toFixed(2)).join(", ")}`,
 );
+const pk = report.peaks ?? {};
 console.log(`total src binds   : ${report.totalBinds}  (thrash detector; expect ~clip count)`);
-console.log(`max live objectURLs: ${report.maxLiveUrls}  (leak detector; bound is 3)`);
-console.log(`max in-flight     : ${report.maxInFlight}  (residency bound is 3)`);
-console.log(`revealed unsettled: ${report.revealedUnsettled}  (must be 0)`);
+console.log(`frames observed   : ${pk.samples}  (every-frame sampling, not settled snapshots)`);
+console.log(`peak resident-union: ${pk.union}  (completed + in-flight; bound is 3)`);
+console.log(`peak in-flight    : ${pk.inFlight}`);
+console.log(`peak live objectURLs: ${pk.live}  (bound is 3)`);
+console.log(`visible-unpresented: ${pk.visibleUnpresented}  (must be 0)`);
 console.log(`Range requests    : ${rangeRequests}`);
 
 // In stream mode the runtime seeks over HTTP, so the dense-GOP range behaviour

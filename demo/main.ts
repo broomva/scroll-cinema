@@ -49,9 +49,32 @@ const cinema = createScrollCinema({
 });
 
 const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
-const settle = async (ms: number) => {
+
+/**
+ * Running peaks, sampled EVERY frame.
+ *
+ * Taking one snapshot after each scroll settles cannot see the states that
+ * actually violate the bounds: the transient where an old clip is still held,
+ * a new one is downloading, and a decoder is mid-seek. Those last a few frames.
+ */
+const peaks = { union: 0, inFlight: 0, live: 0, visibleUnpresented: 0, samples: 0 };
+
+function observe(c: ScrollCinema): void {
+  const d = c.debug();
+  peaks.samples++;
+  // Completed and in-flight clips both hold memory, so bound their UNION.
+  peaks.union = Math.max(peaks.union, new Set([...d.resident, ...d.inFlight]).size);
+  peaks.inFlight = Math.max(peaks.inFlight, d.inFlight.length);
+  peaks.live = Math.max(peaks.live, d.liveUrls);
+  if (d.opacity.some((o, i) => o > 0 && !d.settled[i])) peaks.visibleUnpresented++;
+}
+
+const settle = async (ms: number, c?: ScrollCinema) => {
   const end = performance.now() + ms;
-  while (performance.now() < end) await frame();
+  while (performance.now() < end) {
+    await frame();
+    if (c) observe(c);
+  }
 };
 
 /** Wait until at least one clip has decodable metadata, or give up. */
@@ -80,8 +103,9 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
 
   for (const p of [0, 0.15, 0.35, 0.55, 0.75, 0.95, 1]) {
     window.scrollTo(0, Math.round(p * max));
-    // tau is 96ms; ~600ms is well past settled.
-    await settle(700);
+    // tau is 96ms; ~600ms is well past settled. Peaks are collected throughout
+    // the wait, not just at its end.
+    await settle(700, c);
     samples.push(c.debug());
   }
   report.samples = samples;
@@ -89,9 +113,6 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
   // --- invariants -------------------------------------------------------
   if (!samples.every((s) => s.decoders === 2)) {
     failures.push(`decoder count left 2: ${samples.map((s) => s.decoders).join(",")}`);
-  }
-  if (!samples.every((s) => s.resident.length <= 3)) {
-    failures.push(`resident set exceeded 3: ${samples.map((s) => s.resident.length).join(",")}`);
   }
   // NOTE: asserting `held.length <= 2` is vacuous — there are only two slots.
   // The real invariants are below, and they are what a slot-collision bug trips.
@@ -112,29 +133,26 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
 
   // Object-URL leak. Live URLs must stay inside the residency bound no matter
   // how much contention the sweep created.
-  const maxLive = Math.max(...samples.map((s) => s.liveUrls));
-  report.maxLiveUrls = maxLive;
-  if (maxLive > 3) {
-    failures.push(`object-URL leak: ${maxLive} live URLs (residency bound is 3)`);
+
+  // Peak-based assertions. These use the every-frame observations, because the
+  // states that break the bounds are transients a settled snapshot never sees.
+  report.peaks = peaks;
+
+  // A VISIBLE decoder must have presented a frame from its current source.
+  // (Earlier this value was computed and never asserted on, so it could not
+  // fail -- an absent verifier reads as green.)
+  if (peaks.visibleUnpresented > 0) {
+    failures.push(
+      `${peaks.visibleUnpresented}/${peaks.samples} frames showed a decoder that had presented nothing`,
+    );
   }
 
-  // A VISIBLE decoder must have genuinely presented the frame that was asked
-  // for. The previous version of this check computed a number and never
-  // asserted on it, so it could not fail -- an absent verifier reads as green.
-  const revealedUnsettled = samples.filter((s) =>
-    s.opacity.some((o, slot) => o > 0 && !s.settled[slot]),
-  ).length;
-  report.revealedUnsettled = revealedUnsettled;
-  if (revealedUnsettled > 0) {
-    failures.push(`${revealedUnsettled} samples revealed an unsettled decoder`);
+  // Completed + downloading clips both hold memory, so the UNION is the bound.
+  if (peaks.union > 3) {
+    failures.push(`peak resident-union ${peaks.union} clips (bound is 3)`);
   }
-
-  // In-flight downloads must also stay inside the residency bound: evicting
-  // only COMPLETED clips would let a fast traversal buffer the whole story.
-  const maxInFlight = Math.max(...samples.map((s) => s.inFlight.length));
-  report.maxInFlight = maxInFlight;
-  if (maxInFlight > 3) {
-    failures.push(`${maxInFlight} concurrent downloads (residency bound is 3)`);
+  if (peaks.live > 3) {
+    failures.push(`peak live object URLs ${peaks.live} (bound is 3)`);
   }
 
   // Scrubbing must actually move the decoder, not merely change state.

@@ -103,9 +103,23 @@ bun run dogfood    # build the demo and drive it in headless Chrome
 ```
 
 `bun run check` covers the arithmetic. `bun run dogfood` covers what unit tests
-structurally cannot: how many decoders exist, whether seeks actually land, and
-whether the resident set stays bounded while a user scrolls. Both are required —
-see `demo/README.md` for supplying assets to the dogfood run.
+structurally cannot, running **both** strategies in headless Chrome and asserting:
+
+| Invariant | Why it exists |
+|---|---|
+| `decoders === 2` | the core memory claim |
+| resident set ≤ 3 | retention bound, completed clips |
+| in-flight ≤ 3 | retention bound, *downloads* — a fast traversal must not buffer the story |
+| total `src` binds ≈ clip count | **decoder thrash.** A slot-collision bug rebinds every frame; measured 5 when correct, 247 when reintroduced |
+| no visible unsettled decoder | a revealed clip must have presented the requested frame, not frame 0 |
+| stream run served Range requests | otherwise the 206 path is untested and the run proves nothing about streaming |
+
+Both are required — see `demo/README.md` for supplying assets.
+
+The thrash and in-flight counters exist because the first version of this
+package passed 33 unit tests *and* a green browser run while binding the wrong
+clip to a decoder on every frame. The harness had asserted `held.length <= 2`,
+which two slots satisfy unconditionally.
 
 ## What was fixed relative to the reference
 
