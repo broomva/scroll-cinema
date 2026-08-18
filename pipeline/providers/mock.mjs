@@ -23,6 +23,7 @@ function paletteFor(text) {
 }
 
 export const name = "mock";
+export const supportsLastFrame = true;
 export const requiresKey = false;
 
 export async function image({ prompt, width, height, outPath, dryRun }) {

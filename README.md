@@ -76,12 +76,20 @@ node pipeline/cinema.mjs manifest assets/
 
 `bun run cinema:demo` runs the whole thing on the bundled example storyboard.
 
-**Providers.** `mock` synthesizes real mp4s with ffmpeg — no key, no network —
-so the wiring is exercised before anything is metered, and CI can run it. `fal`
-uses Nano Banana Pro for stills and Kling `tail_image_url` for the endpoint-pinned
-clips; run it with `--dry-run` first to inspect the exact request bodies. The
-adapter interface is small on purpose: models rotate quarterly, the system is the
-durable asset.
+**Providers.** `mock` (ffmpeg, no key, runs in CI) · `gemini` (Gemini image
+models + Veo 3.1, **validated live end to end**) · `fal` (Nano Banana Pro +
+Kling `tail_image_url`, dry-run verified only). The adapter interface is small on
+purpose: models rotate quarterly, the system is the durable asset. Metered
+providers print a cost estimate and require `--yes`.
+
+**Chain modes.** `pinned` authors every still and pins both ends of each clip.
+`forward` authors only the first still and adopts each clip's real final frame as
+the next one — the invariant still holds exactly, at the cost of art-directing
+intermediate keyframes. Forward is selected automatically when a provider cannot
+accept an end frame, which is the case for Veo 3.1: it documents `lastFrame` but
+gates the capability off on every tier (400 *"Your use case is currently not
+supported"*; the identical request without it succeeds — verified lite/fast/
+standard, 2026-08-18).
 
 **Storyboard.** See `pipeline/storyboard.example.json`. `motions` carries one
 entry per **gap** (`scenes.length - 1`), not per scene — the builder rejects a
