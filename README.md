@@ -63,6 +63,43 @@ stage. Shorter feels frantic; much longer feels like work.
 `debug()` exposes live internals (decoder count, resident set, per-slot
 `currentTime`) — that is what the browser self-test asserts against.
 
+## Generating the footage
+
+The package ships the generation pipeline too, so the flow is end to end and
+reusable on any subject:
+
+```bash
+node pipeline/cinema.mjs build storyboard.json --out assets/ --provider mock
+node pipeline/cinema.mjs verify assets/
+node pipeline/cinema.mjs manifest assets/
+```
+
+`bun run cinema:demo` runs the whole thing on the bundled example storyboard.
+
+**Providers.** `mock` synthesizes real mp4s with ffmpeg — no key, no network —
+so the wiring is exercised before anything is metered, and CI can run it. `fal`
+uses Nano Banana Pro for stills and Kling `tail_image_url` for the endpoint-pinned
+clips; run it with `--dry-run` first to inspect the exact request bodies. The
+adapter interface is small on purpose: models rotate quarterly, the system is the
+durable asset.
+
+**Storyboard.** See `pipeline/storyboard.example.json`. `motions` carries one
+entry per **gap** (`scenes.length - 1`), not per scene — the builder rejects a
+mismatch rather than silently pairing the wrong motion with the wrong transition.
+Stills use `SHOT + LENS + LIGHT + TEXTURE + COMPOSITION + STYLE`; motions use
+`WHAT moves + HOW it moves + HOW the camera behaves` in ~20–40 words, without
+re-describing the still.
+
+**`verify` measures the chain, it does not assume it.** Each clip's first and
+last frame are RMSE-matched against every still, and the predicted match must win
+by a clear margin — the same measurement that discovered the pattern in the
+original assets. This is the only gate that catches a provider silently ignoring
+the end-frame parameter: such a clip is still valid, scrubbable video and passes
+everything else. Proven by mutation — pointing one clip at the wrong end still
+yields `last frame expected still 1, matched 3 → FAIL 9/10`.
+
+Generation is resumable; existing outputs are skipped unless `--force`.
+
 ## Preparing footage
 
 Ordinary web video **cannot be scrubbed**: seeking decodes forward from the

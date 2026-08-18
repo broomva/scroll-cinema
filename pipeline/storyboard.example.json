@@ -1,0 +1,67 @@
+{
+  "title": "The Way of the Leaf",
+
+  "_style": "Applied to EVERY still. Image prompts are a technical brief, layered not short: SHOT + LENS + LIGHT + TEXTURE + COMPOSITION + STYLE. Naming real camera bodies and lenses is the single cheapest realism lever.",
+  "style": "cinematic still, 35mm anamorphic, shallow depth of field, cool morning light, volumetric mist, fine organic texture, muted green and slate palette, photographic not illustrative",
+
+  "_negative": "Negative constraints are a lever, not an afterthought.",
+  "negative": "blur, distortion, low quality, text, watermark, warped hands, oversaturated",
+
+  "width": 1600,
+  "height": 900,
+  "fps": 24,
+  "seconds": 5,
+  "gop": 8,
+
+  "_models": "Optional per-provider overrides. Omit to take the provider defaults.",
+  "models": {},
+
+  "_scenes": "N scenes produce N-1 clips and serve as N poster stills. `image` describes a STATIC frame. `title`/`body` are the copy the runtime shows for that scene.",
+  "scenes": [
+    {
+      "id": "valley",
+      "title": "Before it becomes tea.",
+      "body": "High in the mountains, mist settles slowly on the youngest leaves.",
+      "image": "wide establishing shot of terraced tea fields on a steep mountainside at dawn, layered ridgelines receding into mist, a stone path threading between rows, foreground tea leaves catching the light"
+    },
+    {
+      "id": "harvest",
+      "title": "Gathered only at dawn.",
+      "body": "Hands choose the tender tips — two leaves and a bud.",
+      "image": "medium shot of a picker in a woven conical hat moving between waist-high tea rows, wicker basket at the hip, wet leaves in the near foreground, valley soft behind"
+    },
+    {
+      "id": "drying",
+      "title": "Time becomes fragrance.",
+      "body": "Across woven bamboo trays, each leaf softens and reveals its character.",
+      "image": "interior of a timber drying house, long bamboo trays of withering leaves receding toward a bright doorway, dust suspended in a shaft of light, warm wood against cool exterior"
+    },
+    {
+      "id": "fire",
+      "title": "Fire remembers the hands.",
+      "body": "Copper, charcoal and the steady movement of the maker.",
+      "image": "close shot of hands turning leaves in a wide copper pan over charcoal, ember glow underlighting the steam, dark surrounding room, shallow focus on the leaves"
+    },
+    {
+      "id": "road",
+      "title": "A quiet road to water.",
+      "body": "Tea leaves the workshop by the same path that carries rain and cedar.",
+      "image": "narrow stone mountain road under tall cedars, wet surface reflecting an overcast sky, mist between the trunks, the path curving out of frame"
+    },
+    {
+      "id": "cup",
+      "title": "The whole valley, in one cup.",
+      "body": "The mountains return in the steam above dark water.",
+      "image": "overhead close shot of a dark ceramic cup of tea on weathered wood, steam curling in raking side light, single leaf resting beside the cup"
+    }
+  ],
+
+  "_motions": "One per GAP, so exactly scenes.length - 1. WHAT moves + HOW it moves + HOW the camera behaves, ~20-40 words. Do NOT re-describe the image — the model already has it. One shot = one camera move. Motion needs an endpoint; here the end frame supplies it.",
+  "motions": [
+    "camera pushes forward down the terrace path at a steady walking pace, foreground leaves sweeping past the lens left and right, mist drifting slowly right to left",
+    "camera descends and settles toward the picker as the leaves part, hands continuing their steady picking rhythm, gentle parallax between the near rows and the far valley",
+    "camera glides through the doorway into the drying house, dust turning in the light shaft, trays sliding past on both sides, motion easing as the interior opens",
+    "camera tilts down toward the copper pan, steam rising continuously, ember light pulsing, hands keeping their turning rhythm without pause",
+    "camera lifts from the road and drifts forward between the cedars, mist thinning ahead, wet stone sliding underneath, easing to rest as the cup comes into frame"
+  ]
+}
