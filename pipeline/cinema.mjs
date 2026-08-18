@@ -95,7 +95,45 @@ async function build() {
     die(`provider "${providerName}" needs ${provider.keyEnv} in the environment`);
   }
 
+  // Pre-flight cost estimate. A metered provider must never start spending
+  // without first saying what it is about to spend -- and `--yes` is required
+  // so an accidental invocation cannot quietly bill a long storyboard.
+  if (!dryRun && provider.requiresKey && provider.VIDEO_RATE) {
+    const vModel = sb.models?.video ?? provider.defaults?.videoModel;
+    const iModel = sb.models?.image ?? provider.defaults?.imageModel;
+    const secs = provider.snapDuration ? provider.snapDuration(sb.seconds) : sb.seconds;
+    const gaps = sb.scenes.length - 1;
+    const vCost = (provider.VIDEO_RATE[vModel] ?? 0) * secs * gaps;
+    const iCost = (provider.IMAGE_RATE?.[iModel] ?? 0) * sb.scenes.length;
+    console.log(
+      `\ncost estimate (${providerName}):\n` +
+        `  ${sb.scenes.length} stills x ${iModel} = $${iCost.toFixed(2)}\n` +
+        `  ${gaps} clips x ${secs}s x ${vModel} = $${vCost.toFixed(2)}\n` +
+        `  total ~ $${(vCost + iCost).toFixed(2)}` +
+        (secs !== sb.seconds ? `   (duration snapped ${sb.seconds}s -> ${secs}s)` : ""),
+    );
+    if (!flag("yes")) {
+      die("refusing to spend without --yes (or re-run with --dry-run to inspect the requests)");
+    }
+    console.log("  --yes given, proceeding\n");
+  }
+
   for (const d of ["stills", "raw", "video"]) mkdirSync(join(out, d), { recursive: true });
+
+  // Chain mode. `pinned` authors every still and pins BOTH ends of each clip.
+  // `forward` authors only the first still, then adopts each clip's real last
+  // frame as the next still -- which keeps the chain invariant exact when a
+  // provider cannot accept an end frame, at the cost of art-directing the
+  // intermediate keyframes.
+  const forward = flag("forward") || provider.supportsLastFrame === false;
+  if (forward && !flag("forward")) {
+    console.log(
+      `\nnote: provider "${providerName}" does not accept an end frame, so the run` +
+        "\n      uses FORWARD chaining: still 0 is authored, every later still is the" +
+        "\n      previous clip's final frame. Continuity is preserved and the chain" +
+        "\n      invariant still holds exactly; intermediate keyframes are not art-directed.",
+    );
+  }
 
   const imgExt = providerName === "mock" ? "png" : "jpg";
   const stills = sb.scenes.map((sc, i) => join(out, "stills", `${pad(i)}-${sc.id}.${imgExt}`));
@@ -108,8 +146,9 @@ async function build() {
   // --- stage 1: keyframes ----------------------------------------------
   // Iterate here, not on the clips: stills are cheap and fast, and image
   // fidelity caps video fidelity.
-  console.log(`\n[1/4] keyframes  (${sb.scenes.length})`);
-  for (const [i, sc] of sb.scenes.entries()) {
+  const authored = forward ? sb.scenes.slice(0, 1) : sb.scenes;
+  console.log(`\n[1/4] keyframes  (${authored.length}${forward ? ` authored, ${sb.scenes.length - 1} derived` : ""})`);
+  for (const [i, sc] of authored.entries()) {
     const outPath = stills[i];
     if (existsSync(outPath) && !force) {
       console.log(`  skip  ${basename(outPath)} (exists; --force to redo)`);
@@ -130,7 +169,7 @@ async function build() {
   }
 
   // --- stage 2: motion between adjacent keyframes -----------------------
-  console.log(`\n[2/4] clips  (${raws.length}, endpoints pinned)`);
+  console.log(`\n[2/4] clips  (${raws.length}, ${forward ? "forward-chained" : "endpoints pinned"})`);
   for (let i = 0; i < raws.length; i++) {
     const outPath = raws[i];
     if (existsSync(outPath) && !force) {
@@ -140,7 +179,9 @@ async function build() {
     const base = opt("frame-base-url");
     const r = await provider.video({
       firstFrame: stills[i],
-      lastFrame: stills[i + 1],
+      // In forward mode the model is given no end frame; the next still is
+      // derived from what it actually produced, below.
+      lastFrame: forward ? undefined : stills[i + 1],
       firstFrameUrl: base ? `${base.replace(/\/$/, "")}/${basename(stills[i])}` : undefined,
       lastFrameUrl: base ? `${base.replace(/\/$/, "")}/${basename(stills[i + 1])}` : undefined,
       prompt: sb.motions[i],
@@ -152,7 +193,20 @@ async function build() {
       outPath,
       dryRun,
       models: sb.models,
+      onProgress: (elapsed) => process.stdout.write(`\r  ...   ${basename(outPath)} ${elapsed}s`),
     });
+    if (!dryRun) process.stdout.write("\r\x1b[K");
+
+    // Adopt the clip's real final frame as the next keyframe. This is what
+    // makes the chain exact without end-frame conditioning: still i+1 is not
+    // merely similar to the clip's ending, it IS the clip's ending.
+    if (forward && !dryRun && !existsSync(stills[i + 1])) {
+      await run("ffmpeg", [
+        "-v", "error", "-y", "-sseof", "-0.5", "-i", outPath, "-update", "1", stills[i + 1],
+      ]);
+      console.log(`  ok    ${basename(stills[i + 1])} (derived from ${basename(outPath)})`);
+    }
+
     log.push({ stage: "video", gap: `${sb.scenes[i].id}->${sb.scenes[i + 1].id}`, ...r });
     console.log(`  ${dryRun ? "plan" : "ok  "}  ${basename(outPath)}`);
   }

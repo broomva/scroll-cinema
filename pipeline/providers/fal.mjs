@@ -26,6 +26,7 @@ import { writeFile } from "node:fs/promises";
 const QUEUE = "https://queue.fal.run";
 
 export const name = "fal";
+export const supportsLastFrame = true;
 export const requiresKey = true;
 export const keyEnv = "FAL_KEY";
 

@@ -72,11 +72,37 @@ node pipeline/cinema.mjs verify assets/
 node pipeline/cinema.mjs manifest assets/     # paste-ready arrays
 ```
 
-`--provider mock` synthesizes real mp4s with ffmpeg — no API key, no network.
-Use it to exercise the wiring before spending money. `--provider fal` uses Nano
-Banana Pro for stills and Kling `tail_image_url` for the pinned clips; pair it
-with `--dry-run` first to inspect the exact request bodies. Generation is
-resumable: existing outputs are skipped unless `--force`.
+Generation is resumable — existing outputs are skipped unless `--force`.
+
+### Providers
+
+| provider | stills | clips | end-frame pinning | verified |
+|---|---|---|---|---|
+| `mock` | ffmpeg | ffmpeg blend | yes | offline, runs in CI |
+| `gemini` | Gemini image models | **Veo 3.1** | **no — gated** | **live, end to end** |
+| `fal` | Nano Banana Pro | Kling `tail_image_url` | yes | dry-run only, no key here |
+
+Always `--dry-run` a new provider first; it prints the exact request bodies
+without spending. Metered providers also require `--yes` after showing a cost
+estimate, so an accidental invocation cannot quietly bill a long storyboard.
+
+### Two chain modes
+
+**Pinned** (default when the provider supports it): every still is authored and
+both ends of each clip are pinned. Full art direction over the keyframes.
+
+**Forward** (`--forward`, and automatic when `supportsLastFrame === false`):
+only the first still is authored; each later still is the **previous clip's
+actual final frame**. The chain invariant still holds *exactly* — still `i+1`
+is not merely similar to clip `i`'s ending, it IS that ending — so the seams
+stay invisible. What you give up is art-directing the intermediate keyframes,
+and drift accumulates along the chain rather than being reset at every stop.
+
+This is not hypothetical: Veo 3.1 documents a `lastFrame` parameter but the
+capability is gated off. All three tiers return 400 *"Your use case is currently
+not supported"* when it is present, while the identical request without it
+succeeds (verified across lite/fast/standard, 2026-08-18). Forward chaining is
+what makes Veo usable for this technique anyway.
 
 **Storyboard shape** — see `pipeline/storyboard.example.json`. `motions` has one
 entry per **gap** (`scenes.length - 1`), not per scene; the builder rejects a
