@@ -19,7 +19,8 @@
     "dogfood": "bun run demo:build && node scripts/dogfood.mjs && node scripts/dogfood.mjs --stream",
     "check": "bun run typecheck && bun run lint && bun test",
     "cinema": "node pipeline/cinema.mjs",
-    "cinema:demo": "node pipeline/cinema.mjs build pipeline/storyboard.example.json --out .cinema-demo --provider mock && node pipeline/cinema.mjs verify .cinema-demo"
+    "cinema:demo": "node pipeline/cinema.mjs build pipeline/storyboard.example.json --out .cinema-demo --provider mock && node pipeline/cinema.mjs verify .cinema-demo",
+    "demo:serve": "bun run demo:build && node scripts/serve-demo.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.14",

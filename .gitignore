@@ -9,3 +9,4 @@ demo/assets/
 .cinema-demo/
 __pycache__/
 *.pyc
+.cinema-live/
