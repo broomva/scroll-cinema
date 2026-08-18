@@ -150,9 +150,14 @@ exactly one image.
 
 ```bash
 bun install
-bun run check      # typecheck + lint + unit tests
-bun run dogfood    # build the demo and drive it in headless Chrome
+bun run check       # typecheck + lint + unit tests
+bun run dogfood     # build the demo and drive it in headless Chrome
+bun run demo:serve  # serve it at localhost:8899 so you can scroll it yourself
 ```
+
+`demo:serve` needs assets linked first (`scripts/link-demo-assets.sh <dir>`). It
+honours Range requests, which is not optional — without 206 responses the
+browser cannot seek within a clip, and seeking is the entire effect.
 
 `bun run check` covers the arithmetic. `bun run dogfood` covers what unit tests
 structurally cannot, running **both** strategies in headless Chrome and asserting:
