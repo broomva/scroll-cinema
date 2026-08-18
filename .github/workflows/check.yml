@@ -1,0 +1,38 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+
+      # ffmpeg drives conform + the mock provider; webp supplies cwebp for
+      # posters; Pillow is what makes the chain gate actually run -- without it
+      # chain_rmse.py skips, and a skipped gate reads as a green one.
+      - name: system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg webp
+          python3 -m pip install --quiet --break-system-packages Pillow
+          python3 -c "import PIL; print('Pillow', PIL.__version__)"
+
+      - run: bun install --frozen-lockfile
+      - name: typecheck + lint + unit tests
+        run: bun run check
+
+      # Generates a real asset set with the mock provider and verifies the
+      # keyframe-chain invariant, the encode gate and the budget gate.
+      - name: pipeline end-to-end
+        run: bun run cinema:demo
+
+      # Drives the runtime in headless Chrome against those generated assets.
+      - name: runtime dogfood (blob + stream)
+        run: |
+          bash scripts/link-demo-assets.sh .cinema-demo
+          bun run dogfood

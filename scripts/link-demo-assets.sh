@@ -24,6 +24,13 @@ mkdir -p "$DEST"
 ln -sfn "$(cd "$SRC/video" && pwd)"  "$DEST/video"
 ln -sfn "$(cd "$SRC/stills" && pwd)" "$DEST/stills"
 
+# A pipeline-generated set carries a manifest; the demo prefers it over its
+# built-in fallback list, so link it too or the demo silently uses the wrong set.
+if [ -f "$SRC/cinema.manifest.json" ]; then
+  ln -sfn "$(cd "$SRC" && pwd)/cinema.manifest.json" "$DEST/cinema.manifest.json"
+  echo "linked cinema.manifest.json"
+fi
+
 clips=$(find -L "$DEST/video" -name '*.mp4' | wc -l | tr -d ' ')
 stills=$(find -L "$DEST/stills" -name '*.webp' | wc -l | tr -d ' ')
 echo "linked $clips clips and $stills stills into demo/assets"

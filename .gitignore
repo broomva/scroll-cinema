@@ -5,3 +5,7 @@ demo/dist/
 # engineered from carry no license (the source repo has `"license": null`), so
 # they are referenced locally for dogfooding and never vendored here.
 demo/assets/
+
+.cinema-demo/
+__pycache__/
+*.pyc

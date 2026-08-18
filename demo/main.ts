@@ -9,7 +9,18 @@
 
 import { createScrollCinema, type ScrollCinema } from "../src/index.js";
 
-const CLIPS = [
+/**
+ * Assets come from `assets/cinema.manifest.json` when the pipeline generated
+ * them, so any storyboard drops straight in. The hardcoded set below is the
+ * fallback for a hand-assembled asset directory.
+ */
+type Manifest = {
+  clips: string[];
+  posters: string[];
+  scenes?: { id: string; title?: string; body?: string }[];
+};
+
+const FALLBACK_CLIPS = [
   "assets/video/01-valley-to-harvest.mp4",
   "assets/video/02-harvest-to-drying-house.mp4",
   "assets/video/03-drying-to-roasting.mp4",
@@ -17,7 +28,7 @@ const CLIPS = [
   "assets/video/05-road-to-ceremony.mp4",
 ];
 
-const POSTERS = [
+const FALLBACK_POSTERS = [
   "assets/stills/01-valley.webp",
   "assets/stills/02-harvest.webp",
   "assets/stills/03-drying-house.webp",
@@ -26,7 +37,34 @@ const POSTERS = [
   "assets/stills/06-tea-ceremony.webp",
 ];
 
-const SCENES = ["Origin", "Harvest", "Air", "Fire", "Passage", "Cup"];
+const FALLBACK_SCENES = ["Origin", "Harvest", "Air", "Fire", "Passage", "Cup"];
+
+async function loadAssets(): Promise<{
+  clips: string[];
+  posters: string[];
+  scenes: string[];
+  source: string;
+}> {
+  try {
+    const res = await fetch("assets/cinema.manifest.json", { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const m = (await res.json()) as Manifest;
+    if (!Array.isArray(m.clips) || !Array.isArray(m.posters)) throw new Error("malformed manifest");
+    return {
+      clips: m.clips.map((c) => `assets/${c}`),
+      posters: m.posters.map((p) => `assets/${p}`),
+      scenes: (m.scenes ?? []).map((s, i) => s.title ?? s.id ?? `Scene ${i + 1}`),
+      source: "cinema.manifest.json",
+    };
+  } catch {
+    return {
+      clips: FALLBACK_CLIPS,
+      posters: FALLBACK_POSTERS,
+      scenes: FALLBACK_SCENES,
+      source: "built-in fallback",
+    };
+  }
+}
 
 const stage = document.querySelector<HTMLElement>("#stage");
 const track = document.querySelector<HTMLElement>("#track");
@@ -37,6 +75,12 @@ if (!stage || !track) throw new Error("demo: missing #stage or #track");
 const strategy =
   new URLSearchParams(location.search).get("strategy") === "stream" ? "stream" : "blob";
 
+const assets = await loadAssets();
+const CLIPS = assets.clips;
+const POSTERS = assets.posters;
+const SCENES = assets.scenes;
+console.log(`scroll-cinema demo: ${CLIPS.length} clips from ${assets.source}`);
+
 const cinema = createScrollCinema({
   clips: CLIPS,
   posters: POSTERS,
@@ -44,7 +88,9 @@ const cinema = createScrollCinema({
   track,
   strategy,
   onScene: (scene) => {
-    if (label) label.textContent = `${String(scene + 1).padStart(2, "0")} · ${SCENES[scene]}`;
+    if (label) {
+      label.textContent = `${String(scene + 1).padStart(2, "0")} · ${SCENES[scene] ?? ""}`;
+    }
   },
 });
 

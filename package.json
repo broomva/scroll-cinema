@@ -17,7 +17,9 @@
     "demo:build": "bun build demo/main.ts --outdir demo/dist --entry-naming demo.js --target browser",
     "demo:assets": "bash scripts/link-demo-assets.sh",
     "dogfood": "bun run demo:build && node scripts/dogfood.mjs && node scripts/dogfood.mjs --stream",
-    "check": "bun run typecheck && bun run lint && bun test"
+    "check": "bun run typecheck && bun run lint && bun test",
+    "cinema": "node pipeline/cinema.mjs",
+    "cinema:demo": "node pipeline/cinema.mjs build pipeline/storyboard.example.json --out .cinema-demo --provider mock && node pipeline/cinema.mjs verify .cinema-demo"
   },
   "devDependencies": {
     "@biomejs/biome": "2.3.14",
