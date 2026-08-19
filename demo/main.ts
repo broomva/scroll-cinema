@@ -143,7 +143,7 @@ function observe(c: ScrollCinema): void {
   if (
     d.revealLag.some((lag, i) => {
       if (d.held[i] === null) return false;
-      if (Number.isNaN(lag)) return false; // not revealed yet
+      if (Number.isNaN(lag)) return false; // counted by the liveness check below
       return !(lag <= REVEAL_TOLERANCE);   // NaN/Infinity fail
     })
   ) {
@@ -279,6 +279,23 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
   // A zero frame count everywhere means requestVideoFrameCallback never fired,
   // so the check above passed by having no data -- report that as a failure
   // rather than as a clean run.
+  // LIVENESS. Skipping unrevealed slots above means a run in which NOTHING ever
+  // becomes visible would score zero violations and pass. Assert that the clips
+  // actually got shown.
+  const revealedSegments = new Set<number>();
+  for (const smp of samples) {
+    smp.revealLag.forEach((lag, i) => {
+      if (!Number.isNaN(lag) && smp.held[i] !== null) revealedSegments.add(smp.held[i] as number);
+    });
+  }
+  report.revealedSegments = [...revealedSegments].sort((a, b) => a - b);
+  if (revealedSegments.size < Math.min(2, CLIPS.length)) {
+    failures.push(
+      `only ${revealedSegments.size} clip(s) ever became visible — the presentation ` +
+        "checks pass vacuously when nothing is ever revealed",
+    );
+  }
+
   if (peaks.framesSeen === 0) {
     failures.push("requestVideoFrameCallback never reported a frame — presentation check was vacuous");
   }

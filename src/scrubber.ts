@@ -190,6 +190,10 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
    * deadband) rather than picked, so it tracks the configured frame rate.
    */
   const REVEAL_TOLERANCE = seekEpsilon * 4;
+  /** Give up waiting for a compositor confirmation after this long. */
+  const REVEAL_TIMEOUT_MS = 1500;
+  /** When each slot was last bound, for the reveal deadline. */
+  const bindAt: number[] = [0, 0];
 
   const poster = doc.createElement("img");
   poster.className = "sc-poster";
@@ -225,9 +229,11 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         objectFit: "cover",
         opacity: "0",
       });
-      // `seeked` is the only honest signal that the requested frame is decoded
-      // and presented. Reading back `currentTime` after assigning it proves
-      // nothing -- the property reflects the REQUEST immediately.
+      // `seeked` says the SEEK completed, not that the frame was presented --
+      // the compositor may still be showing the pre-seek frame. It is used as
+      // the fallback reveal gate; requestVideoFrameCallback below is what
+      // actually confirms presentation. Reading back `currentTime` proves
+      // nothing either: the property reflects the REQUEST immediately.
       const slot = i;
       v.addEventListener("seeked", () => {
         presented[slot] = true;
@@ -414,6 +420,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     lastPaintedTime[slot] = Number.NaN;
     revealLag[slot] = Number.NaN;
     revealed[slot] = false;
+    bindAt[slot] = performance.now();
     binds[slot]++;
     const v = videos[slot];
     v.style.opacity = "0";
@@ -519,7 +526,15 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     // allowed -- blanking mid-scrub would be far worse.
     if (!revealed[slot] && rvfcSupported) {
       const painted = lastPaintedTime[slot];
-      if (!Number.isFinite(painted) || Math.abs(painted - t) > REVEAL_TOLERANCE) {
+      const confirmed =
+        Number.isFinite(painted) && Math.abs(painted - t) > REVEAL_TOLERANCE;
+      // rVFC only fires when a frame is submitted for composition and promises
+      // no timing. Waiting on it unconditionally means a slot that never gets an
+      // acceptable callback stays invisible FOREVER -- a silent black page.
+      // After the deadline, fall back to the `seeked` gate: a briefly stale
+      // frame beats no video at all.
+      const waitedTooLong = performance.now() - (bindAt[slot] || 0) > REVEAL_TIMEOUT_MS;
+      if (confirmed && !waitedTooLong) {
         v.style.opacity = "0";
         return;
       }

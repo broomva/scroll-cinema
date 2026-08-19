@@ -194,6 +194,7 @@ if (pk.worstLag) {
 }
 console.log(`visible-unsettled  : ${pk.visibleUnsettled}  (same check vs our own flag, for comparison)`);
 console.log(`posters before scroll: ${report.postersBeforeScroll}  (must be 1 — resource timing, independent of runtime flags)`);
+console.log(`clips revealed    : ${JSON.stringify(report.revealedSegments ?? [])}  (liveness; empty = vacuous pass)`);
 console.log(`Range requests    : ${rangeRequests}`);
 
 // In stream mode the runtime seeks over HTTP, so the dense-GOP range behaviour
