@@ -18,9 +18,9 @@ gate table — without being told separately. `scripts/conform.sh`,
 from `node_modules`.
 
 Reverse-engineered from `amirmushichge/tea-leaf-scroll-world` and rebuilt
-without its four defects. Full analysis, measurements and art-direction notes:
-[`docs/specs/2026-08-17-scroll-cinema-playbook.html`](../../docs/specs/2026-08-17-scroll-cinema-playbook.html)
-(BRO-2167).
+without its four defects. The analysis behind it — the frame-matching that
+revealed the keyframe chain, and the GOP-cost measurements — is summarised in
+the sections below.
 
 ## What this is for
 
@@ -56,7 +56,7 @@ const cinema = createScrollCinema({
 });
 
 // later
-cinema.destroy();
+cinema.destroy;
 ```
 
 Gear the track at roughly **110vh of scroll per clip** over a `position: fixed`
@@ -74,7 +74,7 @@ stage. Shorter feels frantic; much longer feels like work.
 | `reducedMotion` | auto | Override the `prefers-reduced-motion` read. |
 | `view` | `window` | Injectable, for tests. |
 
-`debug()` exposes live internals (decoder count, resident set, per-slot
+`debug` exposes live internals (decoder count, resident set, per-slot
 `currentTime`) — that is what the browser self-test asserts against.
 
 ## Generating the footage
@@ -195,7 +195,7 @@ which two slots satisfy unconditionally.
 
 ## Limits
 
-The four findings that previously blocked production use are **closed** (BRO-2173):
+The four findings that previously blocked production use are **closed**:
 the residency bound now holds across a backgrounded-tab snap, the presentation
 check is measured against compositor frames rather than our own flag, retry
 accounting resets on success and backs off, and `maxResident` warns instead of

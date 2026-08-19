@@ -2,7 +2,7 @@
 name: scroll-cinema
 category: frontend
 version: 0.2.0
-description: "Build a scroll-driven cinematic web page — the effect where scrolling moves a camera through a photoreal world — and generate the footage for it end to end. There is NO 3D involved: the depth is parallax baked into pre-rendered camera movement, and scroll only assigns `video.currentTime` across a chain of clips whose endpoints are pinned to authored stills. Covers the whole flow: storyboard.json → keyframe stills → first/last-frame conditioned clips → dense-GOP conform → invariant + budget gates → a two-decoder runtime with bounded memory. USE WHEN scroll-driven video, scrollytelling, scroll controls the camera, cinematic landing page, scroll scrubbing, video scrub on scroll, immersive scroll site, Apple-style scroll animation, tea-leaf scroll effect, keyframe chain, first frame last frame video, tail_image_url, conform video for scrubbing, dense GOP, generate a scroll narrative. NOT FOR anything that must respond to input OTHER than scroll (hover, drag-orbit, configurators, live data in-scene) — the camera path is baked at build time and cannot answer those, use real 3D (React Three Fiber) instead. NOT FOR text/overlay reveals alone (use CSS `animation-timeline: scroll()`, which is native and free). NOT FOR general video editing or transcription."
+description: "Build a scroll-driven cinematic web page — the effect where scrolling moves a camera through a photoreal world — and generate the footage for it end to end. There is NO 3D involved: the depth is parallax baked into pre-rendered camera movement, and scroll only assigns `video.currentTime` across a chain of clips whose endpoints are pinned to authored stills. Covers the whole flow: storyboard.json → keyframe stills → first/last-frame conditioned clips → dense-GOP conform → invariant + budget gates → a two-decoder runtime with bounded memory. USE WHEN scroll-driven video, scrollytelling, scroll controls the camera, cinematic landing page, scroll scrubbing, video scrub on scroll, immersive scroll site, Apple-style scroll animation, tea-leaf scroll effect, keyframe chain, first frame last frame video, tail_image_url, conform video for scrubbing, dense GOP, generate a scroll narrative. NOT FOR anything that must respond to input OTHER than scroll (hover, drag-orbit, configurators, live data in-scene) — the camera path is baked at build time and cannot answer those, use real 3D (React Three Fiber) instead. NOT FOR text/overlay reveals alone (use CSS `animation-timeline: scroll`, which is native and free). NOT FOR general video editing or transcription."
 author: broomva
 repo: github.com/broomva/scroll-cinema
 tags:
@@ -179,7 +179,7 @@ metric proves nothing.**
 
 ## Limits
 
-The four findings that previously blocked production use are **closed** (BRO-2173):
+The four findings that previously blocked production use are **closed**:
 the residency bound now holds across a backgrounded-tab snap, the presentation
 check is measured against compositor frames rather than our own flag, retry
 accounting resets on success and backs off, and `maxResident` warns instead of
