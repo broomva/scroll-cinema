@@ -66,6 +66,8 @@
     "scripts/conform.sh",
     "scripts/budget.mjs",
     "pipeline",
+    "!pipeline/__pycache__",
+    "!**/*.pyc",
     "SKILL.md",
     "README.md",
     "LICENSE",
