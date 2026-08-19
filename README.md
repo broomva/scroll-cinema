@@ -1,5 +1,9 @@
 # @broomva/scroll-cinema
 
+[![check](https://github.com/broomva/scroll-cinema/actions/workflows/check.yml/badge.svg)](https://github.com/broomva/scroll-cinema/actions/workflows/check.yml)
+[![npm](https://img.shields.io/npm/v/@broomva/scroll-cinema)](https://www.npmjs.com/package/@broomva/scroll-cinema)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Scroll-driven cinematic video scrubbing. Two decoders, bounded memory,
 frame-rate-independent easing.
 
@@ -218,3 +222,24 @@ What remains is inherent to the technique, not defects:
 | D2 | `preload` hint was dead code, overwritten by a blob `src` | Explicit `maxResident` window, current + lookahead only |
 | D3 | Five live `<video>` decoders | Exactly two, via `slot = segment % 2` — constant in story length |
 | D4 | Per-frame easing constant, framerate-dependent | `k = 1 - exp(-dt / tau)`, identical at 60Hz, 120Hz and under jank |
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). The short version: a change should
+come with a test that **fails before the fix**, and any new metric should come
+with an answer to "what would a broken run print?"
+
+Also: [CHANGELOG](./CHANGELOG.md) · [SECURITY](./SECURITY.md) ·
+[CODE_OF_CONDUCT](./CODE_OF_CONDUCT.md)
+
+## Credit
+
+The technique was reverse-engineered from
+[`amirmushichge/tea-leaf-scroll-world`](https://github.com/amirmushichge/tea-leaf-scroll-world),
+a ChatGPT Sites export. No code or assets from it are used here — the analysis
+and the measurements are in the playbook, and this implementation is
+independent.
+
+## License
+
+MIT © Carlos D. Escobar-Valbuena

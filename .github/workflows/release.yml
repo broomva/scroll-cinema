@@ -1,0 +1,45 @@
+name: release
+
+# Publishes on a v* tag. Provenance requires id-token: write and a trusted
+# publisher (or NPM_TOKEN) configured on npm.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      # The same gates CI runs — a tag must not skip them.
+      - name: system deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg webp
+          python3 -m pip install --quiet --break-system-packages Pillow
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run cinema:demo
+      - run: |
+          bash scripts/link-demo-assets.sh .cinema-demo
+          bun run dogfood
+
+      - name: version matches tag
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG=${GITHUB_REF_NAME#v}
+          [ "$PKG" = "$TAG" ] || { echo "package.json $PKG != tag $TAG"; exit 1; }
+
+      - run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

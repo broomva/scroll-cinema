@@ -1,0 +1,25 @@
+name: Provider request or report
+description: A video/image provider to support, or one behaving unexpectedly
+labels: [provider]
+body:
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      placeholder: "fal / kling-video v2.1 pro"
+    validations: { required: true }
+  - type: dropdown
+    id: lastframe
+    attributes:
+      label: Does it accept an end frame (last-frame conditioning)?
+      options: ["Yes", "No", "Documented but rejected at runtime", "Unknown"]
+    validations: { required: true }
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: >
+        Request body and response, keys redacted. Schemas documented by vendors
+        are frequently wrong — Veo 3.1 documents `lastFrame` and rejects it at
+        runtime, so a real call is worth far more than a doc link.
+      render: json
