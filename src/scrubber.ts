@@ -35,7 +35,14 @@ export interface ScrollCinemaOptions {
   tau?: number;
   /** Fraction of each clip spent crossfading into the next. */
   fade?: number;
-  /** Maximum clips retained in memory at once. This is the memory bound. */
+  /**
+   * Maximum clips retained in memory at once — completed plus in-flight.
+   *
+   * **Minimum 3; smaller values are raised with a console warning.** Two clips
+   * are bound during a crossfade and a third may be downloading, so a smaller
+   * budget cannot be honoured — silently accepting one would make this option a
+   * lie rather than a limit.
+   */
   maxResident?: number;
   /** Seek deadband, seconds. Defaults to half a frame at 24fps. */
   seekEpsilon?: number;
@@ -63,6 +70,12 @@ export interface ScrollCinemaDebug {
   held: (number | null)[];
   /** Whether each slot has presented a frame from its current source. */
   settled: boolean[];
+  /**
+   * Frames actually painted by the compositor for the current source, counted
+   * via requestVideoFrameCallback. Independent of `settled` -- which is what
+   * gates opacity, and therefore cannot be used to check opacity.
+   */
+  framesPresented: number[];
   /** Segments currently buffered. */
   resident: number[];
   /** Segments with a fetch in flight. */
@@ -141,6 +154,15 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
    * still sitting at time 0 while the viewer is mid-segment.
    */
   const presented: boolean[] = [false, false];
+  /**
+   * Compositor-confirmed frame count per slot, reset on every rebind.
+   *
+   * `presented` is set by our own `seeked` handler and is what gates opacity,
+   * so asserting "opacity > 0 implies presented" is circular. This counter
+   * comes from requestVideoFrameCallback -- the browser telling us it actually
+   * painted a frame -- giving the harness a source of truth it does not control.
+   */
+  const framesPresented: number[] = [0, 0];
 
   const poster = doc.createElement("img");
   poster.className = "sc-poster";
@@ -183,6 +205,17 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       v.addEventListener("seeked", () => {
         presented[slot] = true;
       });
+      // rVFC is not in every lib.dom; degrade rather than fail where absent.
+      const rvfc = (
+        v as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }
+      ).requestVideoFrameCallback?.bind(v);
+      if (rvfc) {
+        const onFrame = () => {
+          framesPresented[slot]++;
+          rvfc(onFrame);
+        };
+        rvfc(onFrame);
+      }
       stage.appendChild(v);
       videos.push(v);
     }
@@ -200,9 +233,12 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   const controllers = new Map<number, AbortController>();
   /** Segments whose fetch failed permanently. Without this, a 404 is retried
    *  on every animation frame -- roughly 60 requests a second, forever. */
-  const failed = new Map<number, number>();
+  const failed = new Map<number, { attempts: number; nextAt: number }>();
   /** Give up on a segment only after this many non-abort failures. */
   const MAX_ATTEMPTS = 3;
+  /** Wait between attempts. Without it a brief outage burns every attempt in
+   *  ~50ms of consecutive animation frames. */
+  const RETRY_BACKOFF_MS = 2000;
   let liveUrls = 0;
 
   // The bound counts COMPLETED plus IN-FLIGHT clips together, because both hold
@@ -211,6 +247,13 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   // smaller budget could not be honoured and would misreport what it documents.
   const RETAIN_FLOOR = 3;
   const retain = Math.max(RETAIN_FLOOR, Math.trunc(maxResident) || RETAIN_FLOOR);
+  if (retain !== maxResident) {
+    console.warn(
+      `scroll-cinema: maxResident ${maxResident} is below the floor of ${RETAIN_FLOOR} ` +
+        "(two clips are bound during a crossfade, a third may be downloading); " +
+        `using ${retain}.`,
+    );
+  }
 
   let easedProgress = 0;
   let lastScene = -1;
@@ -258,7 +301,11 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       return Promise.resolve(url);
     }
 
-    if ((failed.get(segment) ?? 0) >= MAX_ATTEMPTS) return Promise.resolve(null);
+    const priorFailure = failed.get(segment);
+    if (priorFailure) {
+      if (priorFailure.attempts >= MAX_ATTEMPTS) return Promise.resolve(null);
+      if (Date.now() < priorFailure.nextAt) return Promise.resolve(null);
+    }
 
     const controller = new AbortController();
     controllers.set(segment, controller);
@@ -274,6 +321,9 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         const url = URL.createObjectURL(blob);
         liveUrls++;
         cache.set(key(segment), url);
+        // A success clears the record. Without this, three isolated blips across
+        // a long session permanently disable a segment that is working fine.
+        failed.delete(segment);
         return url;
       } catch (err) {
         // Degrade, never block: the poster stays up and the page still works.
@@ -283,7 +333,11 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         // the page; only give up after repeated failures. An abort is a
         // deliberate cancellation and is not counted at all.
         if (!(err instanceof DOMException && err.name === "AbortError")) {
-          failed.set(segment, (failed.get(segment) ?? 0) + 1);
+          const prior = failed.get(segment)?.attempts ?? 0;
+          failed.set(segment, {
+            attempts: prior + 1,
+            nextAt: Date.now() + RETRY_BACKOFF_MS * 2 ** prior,
+          });
         }
         return null;
       } finally {
@@ -321,11 +375,40 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
 
     held[slot] = segment;
     presented[slot] = false;
+    framesPresented[slot] = 0;
     binds[slot]++;
     const v = videos[slot];
     v.style.opacity = "0";
     v.src = url;
     v.load();
+  }
+
+  /**
+   * Let go of decoder slots whose segment has left the bind window.
+   *
+   * `evict()` refuses to reclaim a cache entry that a decoder still holds --
+   * correctly, since dropping bytes out from under a playing element would be
+   * worse. But after a RESUME_GAP snap the segment can jump several places at
+   * once, and then the OLD pair is still held (so un-evictable) while the NEW
+   * pair downloads: four clips resident against a documented bound of three.
+   * Releasing first is what keeps that bound honest.
+   */
+  function release(targets: number[]): void {
+    for (let slot = 0; slot < videos.length; slot++) {
+      const seg = held[slot];
+      if (seg === null || targets.includes(seg)) continue;
+      held[slot] = null;
+      presented[slot] = false;
+      framesPresented[slot] = 0;
+      const v = videos[slot];
+      v.style.opacity = "0";
+      // If nothing is about to take this slot, drop the media too rather than
+      // leave a decoder holding a buffer for a clip that has left the window.
+      if (!targets.some((t) => slotFor(t) === slot)) {
+        v.removeAttribute("src");
+        v.load();
+      }
+    }
   }
 
   function evict(keep: number[]): void {
@@ -412,7 +495,11 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     if (!reducedMotion) {
       // Bind ONLY current + next. `residentSet` is a retention policy and
       // includes the previous clip, which shares a slot with the next one.
-      for (const s of bindTargets(segment, clips.length)) void bind(s);
+      const targets = bindTargets(segment, clips.length);
+      // Release BEFORE binding: a held-but-stale slot would otherwise pin its
+      // cache entry through the whole download of its replacement.
+      release(targets);
+      for (const s of targets) void bind(s);
       evict(residentSet(segment, clips.length, retain));
 
       const f = fadeAt(local, fade);
@@ -459,6 +546,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         decoders: videos.length,
         held: [...held],
         settled: [...presented],
+        framesPresented: [...framesPresented],
         resident: [...cache.keys()].map(Number).sort((a, b) => a - b),
         inFlight: [...inFlight.keys()].sort((a, b) => a - b),
         times: videos.map((v) => v.currentTime),

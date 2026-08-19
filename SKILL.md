@@ -179,23 +179,24 @@ metric proves nothing.**
 
 ## Limits
 
-Open findings (BRO-2173) — do not treat as production-ready:
+The four findings that previously blocked production use are **closed** (BRO-2173):
+the residency bound now holds across a backgrounded-tab snap, the presentation
+check is measured against compositor frames rather than our own flag, retry
+accounting resets on success and backs off, and `maxResident` warns instead of
+silently overriding you. Each was closed red-to-green against a harness case
+that reproduced it first.
 
-1. **Residency can transiently overshoot.** After a backgrounded-tab snap,
-   progress jumps several segments; the old pair is still *held* and not
-   evictable while the new pair downloads, so `resident ∪ inFlight` can reach 4
-   against a bound of 3. The harness's smooth sweep never takes that path.
-2. **The `visible-unpresented` assertion is tautological** — `presented` gates
-   opacity, so it cannot fail. Needs an independent signal
-   (`requestVideoFrameCallback`).
-3. **Retry accounting never resets on success** and has no backoff.
-4. **`maxResident` is documented as a maximum but silently raised to 3.**
+What remains is inherent to the technique, not defects:
 
-Also inherent to the technique, not bugs: the camera path is frozen at build
-time (changing a move means regenerating that segment — keep the stills as the
-durable artifact); bandwidth is the real constraint, so this suits a hero or a
-landing narrative, not a page visited daily; and scrubbing lets a viewer park on
-any frame, so review the contact sheet rather than the playback.
+- **The camera path is frozen at build time.** Changing a move means
+  regenerating that segment — keep the stills as the durable artifact.
+- **Bandwidth is the real constraint.** This suits a hero or a landing
+  narrative, not a page someone visits daily.
+- **Scrubbing lets a viewer park on any frame**, so generation artifacts that
+  are invisible at 24fps become visible. Review the contact sheet, not the
+  playback.
+- **Mobile decoder limits are untested.** The two-decoder design exists partly
+  to stay inside them, but no iOS device has been measured.
 
 ## Anti-rationalization
 

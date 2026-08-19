@@ -103,7 +103,18 @@ const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)));
  * actually violate the bounds: the transient where an old clip is still held,
  * a new one is downloading, and a decoder is mid-seek. Those last a few frames.
  */
-const peaks = { union: 0, inFlight: 0, live: 0, visibleUnpresented: 0, samples: 0 };
+const peaks = {
+  union: 0,
+  inFlight: 0,
+  live: 0,
+  /** Frames where a VISIBLE slot had zero compositor-painted frames (rVFC). */
+  visibleUnpresented: 0,
+  /** Same check against our own `settled` flag — kept only for comparison. */
+  visibleUnsettled: 0,
+  /** Total compositor frames observed; 0 means rVFC is unavailable, not clean. */
+  framesSeen: 0,
+  samples: 0,
+};
 
 function observe(c: ScrollCinema): void {
   const d = c.debug();
@@ -112,7 +123,14 @@ function observe(c: ScrollCinema): void {
   peaks.union = Math.max(peaks.union, new Set([...d.resident, ...d.inFlight]).size);
   peaks.inFlight = Math.max(peaks.inFlight, d.inFlight.length);
   peaks.live = Math.max(peaks.live, d.liveUrls);
-  if (d.opacity.some((o, i) => o > 0 && !d.settled[i])) peaks.visibleUnpresented++;
+  peaks.framesSeen = Math.max(peaks.framesSeen, ...d.framesPresented);
+  // A visible slot must have had at least one frame actually painted by the
+  // compositor for its CURRENT source. framesPresented resets on every rebind,
+  // so a stale count cannot satisfy this.
+  if (d.opacity.some((o, i) => o > 0 && (d.framesPresented[i] ?? 0) === 0)) {
+    peaks.visibleUnpresented++;
+  }
+  if (d.opacity.some((o, i) => o > 0 && !d.settled[i])) peaks.visibleUnsettled++;
 }
 
 const settle = async (ms: number, c?: ScrollCinema) => {
@@ -167,6 +185,23 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
   }
   report.samples = samples;
 
+  // Discontinuous SEGMENT jump. Easing means `segment` normally advances one at
+  // a time no matter how far you scroll, so the only way to land several
+  // segments away in one frame is a RESUME_GAP snap -- a frame gap longer than
+  // 250ms, i.e. a backgrounded tab. Blocking the main thread reproduces it
+  // deterministically. This is the state where the previously-held pair has
+  // left the window while the new pair is still downloading, which is when the
+  // residency bound can overshoot.
+  window.scrollTo(0, 0);
+  await settle(600, c);
+  window.scrollTo(0, Math.round(0.45 * max));
+  const until = performance.now() + 420;
+  while (performance.now() < until) {
+    /* busy-block so the next rAF sees dt > RESUME_GAP */
+  }
+  await settle(1200, c);
+  report.jumpTested = true;
+
   // --- invariants -------------------------------------------------------
   if (!samples.every((s) => s.decoders === 2)) {
     failures.push(`decoder count left 2: ${samples.map((s) => s.decoders).join(",")}`);
@@ -198,11 +233,9 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
   // A VISIBLE decoder must have presented a frame from its current source.
   // (Earlier this value was computed and never asserted on, so it could not
   // fail -- an absent verifier reads as green.)
-  // KNOWN-WEAK (BRO-2173): `presented` is also what gates opacity, so this
-  // comparison is close to tautological and cannot fail on its own. It is kept
-  // as a cheap tripwire for a future refactor that decouples the two, but it is
-  // NOT evidence that reveal timing is correct. An independent signal
-  // (requestVideoFrameCallback frame counts) is required for that.
+  // Now checked against requestVideoFrameCallback frame counts -- the browser
+  // telling us it painted a frame -- rather than against `presented`, which is
+  // the flag that gates opacity and so could never contradict it.
   if (peaks.visibleUnpresented > 0) {
     failures.push(
       `${peaks.visibleUnpresented}/${peaks.samples} frames showed a decoder that had presented nothing`,
@@ -210,6 +243,13 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
   }
 
   // Completed + downloading clips both hold memory, so the UNION is the bound.
+  // A zero frame count everywhere means requestVideoFrameCallback never fired,
+  // so the check above passed by having no data -- report that as a failure
+  // rather than as a clean run.
+  if (peaks.framesSeen === 0) {
+    failures.push("requestVideoFrameCallback never reported a frame — presentation check was vacuous");
+  }
+
   if (peaks.union > 3) {
     failures.push(`peak resident-union ${peaks.union} clips (bound is 3)`);
   }
