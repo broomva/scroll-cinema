@@ -182,8 +182,19 @@ console.log(`frames observed   : ${pk.samples}  (every-frame sampling, not settl
 console.log(`peak resident-union: ${pk.union}  (completed + in-flight; bound is 3)`);
 console.log(`peak in-flight    : ${pk.inFlight}`);
 console.log(`peak live objectURLs: ${pk.live}  (bound is 3)`);
-console.log(`visible-unpresented: ${pk.visibleUnpresented}  (must be 0)`);
+console.log(`compositor frames  : ${pk.framesSeen}  (rVFC; 0 would make the next check vacuous)`);
+console.log(`visible-unpresented: ${pk.visibleUnpresented}  (must be 0 — checked against rVFC)`);
+if (pk.worstLag) {
+  const w = pk.worstLag;
+  console.log(
+    `worst presentation: slot ${w.slot} showing t=${Number(w.painted).toFixed(2)}s ` +
+      `while asking for t=${Number(w.want).toFixed(2)}s (lag ${Number(w.lag).toFixed(2)}s, ` +
+      `opacity ${w.opacity}, frames ${w.frames})`,
+  );
+}
+console.log(`visible-unsettled  : ${pk.visibleUnsettled}  (same check vs our own flag, for comparison)`);
 console.log(`posters before scroll: ${report.postersBeforeScroll}  (must be 1 — resource timing, independent of runtime flags)`);
+console.log(`clips revealed    : ${JSON.stringify(report.revealedSegments ?? [])}  (liveness; empty = vacuous pass)`);
 console.log(`Range requests    : ${rangeRequests}`);
 
 // In stream mode the runtime seeks over HTTP, so the dense-GOP range behaviour

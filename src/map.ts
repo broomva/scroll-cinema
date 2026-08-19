@@ -172,3 +172,37 @@ export function trackProgress(
   if (!Number.isFinite(scrollable) || scrollable <= 0) return 0;
   return clamp01(scrollTop / scrollable);
 }
+
+/**
+ * Whether a freshly bound slot may be shown yet.
+ *
+ * A slot is revealed once the compositor confirms a frame at (near) the
+ * requested time. Until then it stays hidden and the poster covers it -- that is
+ * what stops a clip appearing at frame 0 while the viewer is mid-segment.
+ *
+ * `requestVideoFrameCallback` gives no timing guarantee, so an unconditional
+ * wait can leave a slot invisible forever. `elapsedMs > timeoutMs` is a
+ * deliberate fail-open: a stale frame beats a page that never shows video. The
+ * deadline is wall-clock on purpose -- it is a liveness budget, not a frame
+ * budget, so unlike the tolerance it does not derive from frame rate.
+ *
+ * Pure and exported so the NaN case is directly testable: an earlier inline
+ * version inverted this predicate and revealed immediately when no frame had
+ * been reported, which is precisely when it should have waited.
+ *
+ * @param paintedTime mediaTime of the last compositor-painted frame; NaN if none.
+ */
+export function shouldReveal(
+  paintedTime: number,
+  targetTime: number,
+  tolerance: number,
+  elapsedMs: number,
+  timeoutMs: number,
+): boolean {
+  const confirmed =
+    Number.isFinite(paintedTime) &&
+    Number.isFinite(targetTime) &&
+    Math.abs(paintedTime - targetTime) <= Math.max(0, tolerance);
+  if (confirmed) return true;
+  return elapsedMs > timeoutMs;
+}

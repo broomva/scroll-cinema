@@ -1,5 +1,9 @@
 # @broomva/scroll-cinema
 
+[![check](https://github.com/broomva/scroll-cinema/actions/workflows/check.yml/badge.svg)](https://github.com/broomva/scroll-cinema/actions/workflows/check.yml)
+[![npm](https://img.shields.io/npm/v/@broomva/scroll-cinema)](https://www.npmjs.com/package/@broomva/scroll-cinema)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Scroll-driven cinematic video scrubbing. Two decoders, bounded memory,
 frame-rate-independent easing.
 
@@ -14,9 +18,9 @@ gate table — without being told separately. `scripts/conform.sh`,
 from `node_modules`.
 
 Reverse-engineered from `amirmushichge/tea-leaf-scroll-world` and rebuilt
-without its four defects. Full analysis, measurements and art-direction notes:
-[`docs/specs/2026-08-17-scroll-cinema-playbook.html`](../../docs/specs/2026-08-17-scroll-cinema-playbook.html)
-(BRO-2167).
+without its four defects. The analysis behind it — the frame-matching that
+revealed the keyframe chain, and the GOP-cost measurements — is summarised in
+the sections below.
 
 ## What this is for
 
@@ -64,13 +68,13 @@ stage. Shorter feels frantic; much longer feels like work.
 |---|---|---|
 | `tau` | `0.096` | Inertia time constant, seconds. Reproduces the reference feel at 60Hz. |
 | `fade` | `0.1` | Fraction of each clip spent crossfading into the next. |
-| `maxResident` | `3` | Clips held in memory at once. **This is the memory bound.** |
+| `maxResident` | `3` | Clips retained (completed + in-flight). **Minimum 3** — lower values are raised with a warning, since two clips are bound during a crossfade and a third may be downloading. |
 | `seekEpsilon` | `1/48` | Seek deadband, seconds — half a frame at 24fps. |
 | `strategy` | `"blob"` | `blob` fully buffers for instant seeks; `stream` relies on dense-GOP range requests. |
 | `reducedMotion` | auto | Override the `prefers-reduced-motion` read. |
 | `view` | `window` | Injectable, for tests. |
 
-`debug()` exposes live internals (decoder count, resident set, per-slot
+`debug` exposes live internals (decoder count, resident set, per-slot
 `currentTime`) — that is what the browser self-test asserts against.
 
 ## Generating the footage
@@ -154,7 +158,8 @@ runtime assigns `poster.src` only from the first tick, using the real scroll
 position, so a deep link never pays for poster 0 and then discards it. That
 single-request behaviour is verified in the browser, not assumed — the harness
 reads `performance.getEntriesByType("resource")` before any scroll and requires
-exactly one image.
+exactly one image — not "at most one", since zero would mean the poster never
+loaded and a `> 1` check would have called that clean.
 
 ## Development
 
@@ -178,7 +183,7 @@ structurally cannot, running **both** strategies in headless Chrome and assertin
 | resident set ≤ 3 | retention bound, completed clips |
 | in-flight ≤ 3 | retention bound, *downloads* — a fast traversal must not buffer the story |
 | total `src` binds ≈ clip count | **decoder thrash.** A slot-collision bug rebinds every frame; measured 5 when correct, 247 when reintroduced |
-| no visible unsettled decoder | a revealed clip must have presented a frame from its source, not frame 0. **Known-weak, see limitations** |
+| no visible unsettled decoder | a revealed clip must have painted a frame **at the requested time** — checked against `requestVideoFrameCallback` mediaTime, independent of the flag that gates opacity |
 | exactly 1 poster before first scroll | the first-interaction claim, measured via browser **resource timing** — independent of any runtime flag |
 | stream run served Range requests | otherwise the 206 path is untested and the run proves nothing about streaming |
 
@@ -189,24 +194,26 @@ package passed 33 unit tests *and* a green browser run while binding the wrong
 clip to a decoder on every frame. The harness had asserted `held.length <= 2`,
 which two slots satisfy unconditionally.
 
-## Known limitations — open findings, do not treat as production-ready
+## Limits
 
-Four cross-model review rounds took this from 2/10 to 6/10. The final verdict was
-still **SHIP: NO**, and the fix budget (3 rounds) is spent, so these are recorded
-rather than fixed. Tracked in BRO-2173.
+The four findings that previously blocked production use are **closed**:
+the residency bound now holds across a backgrounded-tab snap, the presentation
+check is measured against compositor frames rather than our own flag, retry
+accounting resets on success and backs off, and `maxResident` warns instead of
+silently overriding you. Each was closed red-to-green against a harness case
+that reproduced it first.
 
-| # | Finding | Status |
-|---|---|---|
-| 1 | **The residency bound can transiently overshoot.** After a `RESUME_GAP` snap (backgrounded tab), progress can jump several segments; downloads start for the new pair while the old pair is still *held* and therefore not evictable, so `resident ∪ inFlight` can reach 4 against a bound of 3. The smooth sweep in the harness never takes the snap path. | open |
-| 2 | **The `visible-unpresented` harness assertion is tautological.** `presented` is what gates opacity, so asserting "opacity > 0 implies presented" cannot fail. It must compare against an independent signal (e.g. a `requestVideoFrameCallback` frame count) to mean anything. | open |
-| 3 | **Retry accounting never resets on success**, and retries have no backoff — three isolated transient failures across a session permanently disable a segment, and a brief outage can burn all three on consecutive frames. | open |
-| 4 | **`maxResident` is documented as a maximum but silently raised to 3.** Either reject values below the floor or document the minimum. | open |
+What remains is inherent to the technique, not defects:
 
-Verified sound: the two-decoder invariant, decoder-thrash bound (5 binds for 5
-clips; 247 when the collision is reintroduced), object-URL dedup and revocation,
-abort-on-destroy, frame-rate-independent easing, the temporal end guard, and
-every `conform.sh` / `budget.mjs` assertion (each proven against input it must
-reject as well as input it must accept).
+- **The camera path is frozen at build time.** Changing a move means
+  regenerating that segment — keep the stills as the durable artifact.
+- **Bandwidth is the real constraint.** This suits a hero or a landing
+  narrative, not a page someone visits daily.
+- **Scrubbing lets a viewer park on any frame**, so generation artifacts that
+  are invisible at 24fps become visible. Review the contact sheet, not the
+  playback.
+- **Mobile decoder limits are untested.** The two-decoder design exists partly
+  to stay inside them, but no iOS device has been measured.
 
 ## What was fixed relative to the reference
 
@@ -216,3 +223,24 @@ reject as well as input it must accept).
 | D2 | `preload` hint was dead code, overwritten by a blob `src` | Explicit `maxResident` window, current + lookahead only |
 | D3 | Five live `<video>` decoders | Exactly two, via `slot = segment % 2` — constant in story length |
 | D4 | Per-frame easing constant, framerate-dependent | `k = 1 - exp(-dt / tau)`, identical at 60Hz, 120Hz and under jank |
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md). The short version: a change should
+come with a test that **fails before the fix**, and any new metric should come
+with an answer to "what would a broken run print?"
+
+Also: [CHANGELOG](./CHANGELOG.md) · [SECURITY](./SECURITY.md) ·
+[CODE_OF_CONDUCT](./CODE_OF_CONDUCT.md)
+
+## Credit
+
+The technique was reverse-engineered from
+[`amirmushichge/tea-leaf-scroll-world`](https://github.com/amirmushichge/tea-leaf-scroll-world),
+a ChatGPT Sites export. No code or assets from it are used here — the analysis
+and the measurements are in the playbook, and this implementation is
+independent.
+
+## License
+
+MIT © Carlos D. Escobar-Valbuena

@@ -2,7 +2,7 @@
 name: scroll-cinema
 category: frontend
 version: 0.2.0
-description: "Build a scroll-driven cinematic web page — the effect where scrolling moves a camera through a photoreal world — and generate the footage for it end to end. There is NO 3D involved: the depth is parallax baked into pre-rendered camera movement, and scroll only assigns `video.currentTime` across a chain of clips whose endpoints are pinned to authored stills. Covers the whole flow: storyboard.json → keyframe stills → first/last-frame conditioned clips → dense-GOP conform → invariant + budget gates → a two-decoder runtime with bounded memory. USE WHEN scroll-driven video, scrollytelling, scroll controls the camera, cinematic landing page, scroll scrubbing, video scrub on scroll, immersive scroll site, Apple-style scroll animation, tea-leaf scroll effect, keyframe chain, first frame last frame video, tail_image_url, conform video for scrubbing, dense GOP, generate a scroll narrative. NOT FOR anything that must respond to input OTHER than scroll (hover, drag-orbit, configurators, live data in-scene) — the camera path is baked at build time and cannot answer those, use real 3D (React Three Fiber) instead. NOT FOR text/overlay reveals alone (use CSS `animation-timeline: scroll()`, which is native and free). NOT FOR general video editing or transcription."
+description: "Build a scroll-driven cinematic web page — the effect where scrolling moves a camera through a photoreal world — and generate the footage for it end to end. There is NO 3D involved: the depth is parallax baked into pre-rendered camera movement, and scroll only assigns `video.currentTime` across a chain of clips whose endpoints are pinned to authored stills. Covers the whole flow: storyboard.json → keyframe stills → first/last-frame conditioned clips → dense-GOP conform → invariant + budget gates → a two-decoder runtime with bounded memory. USE WHEN scroll-driven video, scrollytelling, scroll controls the camera, cinematic landing page, scroll scrubbing, video scrub on scroll, immersive scroll site, Apple-style scroll animation, tea-leaf scroll effect, keyframe chain, first frame last frame video, tail_image_url, conform video for scrubbing, dense GOP, generate a scroll narrative. NOT FOR anything that must respond to input OTHER than scroll (hover, drag-orbit, configurators, live data in-scene) — the camera path is baked at build time and cannot answer those, use real 3D (React Three Fiber) instead. NOT FOR text/overlay reveals alone (use CSS `animation-timeline: scroll`, which is native and free). NOT FOR general video editing or transcription."
 author: broomva
 repo: github.com/broomva/scroll-cinema
 tags:
@@ -15,13 +15,15 @@ tags:
 
 Scroll is a camera, not a scrollbar.
 
-Installed as `@broomva/scroll-cinema`. This file ships inside the package, so if
-you can `import` the runtime you can also run everything below — `scripts/` and
-`pipeline/` are in the tarball, not just the source repo.
+Installed as `@broomva/scroll-cinema`.
 
-**Status: reference implementation, not production-ready.** Four cross-model
-review rounds took it 2/10 → 6/10 and the final verdict was still SHIP: NO. Four
-findings remain open (one blocker) — see [Limits](#limits) before adopting.
+**What ships in the package:** the runtime, `scripts/conform.sh`,
+`scripts/budget.mjs`, and the whole `pipeline/`. Those you can run straight from
+`node_modules`.
+
+**What does not:** `bun run dogfood`, `bun run demo:serve` and
+`scripts/link-demo-assets.sh`. All three drive `demo/`, which is not published —
+they are repo-only, so clone the repository if you want them.
 
 ## Decide first: bake or build?
 
@@ -165,7 +167,7 @@ Run all of them; they do not overlap.
 | Chain | `cinema.mjs verify` | **a provider that ignored the end-frame parameter.** The clip is still valid, scrubbable video and passes every other gate |
 | Encode | `conform.sh --verify-only` | a flag that was silently dropped, so the file is unscrubbable |
 | Budget | `budget.mjs` | first-interaction weight and resident memory |
-| Runtime | `bun run dogfood` | decoder thrash, URL leaks, and whether seeks actually land |
+| Runtime | `bun run dogfood` *(repo only)* | decoder thrash, URL leaks, and whether seeks actually land |
 
 The dogfood harness exists because the first version of this package **passed 33
 unit tests and a green browser run while rebinding a decoder to the wrong clip
@@ -179,23 +181,24 @@ metric proves nothing.**
 
 ## Limits
 
-Open findings (BRO-2173) — do not treat as production-ready:
+The four findings that previously blocked production use are **closed**:
+the residency bound now holds across a backgrounded-tab snap, the presentation
+check is measured against compositor frames rather than our own flag, retry
+accounting resets on success and backs off, and `maxResident` warns instead of
+silently overriding you. Each was closed red-to-green against a harness case
+that reproduced it first.
 
-1. **Residency can transiently overshoot.** After a backgrounded-tab snap,
-   progress jumps several segments; the old pair is still *held* and not
-   evictable while the new pair downloads, so `resident ∪ inFlight` can reach 4
-   against a bound of 3. The harness's smooth sweep never takes that path.
-2. **The `visible-unpresented` assertion is tautological** — `presented` gates
-   opacity, so it cannot fail. Needs an independent signal
-   (`requestVideoFrameCallback`).
-3. **Retry accounting never resets on success** and has no backoff.
-4. **`maxResident` is documented as a maximum but silently raised to 3.**
+What remains is inherent to the technique, not defects:
 
-Also inherent to the technique, not bugs: the camera path is frozen at build
-time (changing a move means regenerating that segment — keep the stills as the
-durable artifact); bandwidth is the real constraint, so this suits a hero or a
-landing narrative, not a page visited daily; and scrubbing lets a viewer park on
-any frame, so review the contact sheet rather than the playback.
+- **The camera path is frozen at build time.** Changing a move means
+  regenerating that segment — keep the stills as the durable artifact.
+- **Bandwidth is the real constraint.** This suits a hero or a landing
+  narrative, not a page someone visits daily.
+- **Scrubbing lets a viewer park on any frame**, so generation artifacts that
+  are invisible at 24fps become visible. Review the contact sheet, not the
+  playback.
+- **Mobile decoder limits are untested.** The two-decoder design exists partly
+  to stay inside them, but no iOS device has been measured.
 
 ## Anti-rationalization
 

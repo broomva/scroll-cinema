@@ -7,6 +7,7 @@ export {
   fadeAt,
   placement,
   residentSet,
+  shouldReveal,
   shouldSeek,
   slotFor,
   timeFor,

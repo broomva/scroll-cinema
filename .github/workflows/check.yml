@@ -8,6 +8,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -15,10 +16,26 @@ jobs:
       # ffmpeg drives conform + the mock provider; webp supplies cwebp for
       # posters; Pillow is what makes the chain gate actually run -- without it
       # chain_rmse.py skips, and a skipped gate reads as a green one.
+      # ffmpeg is preinstalled on the GitHub runner images. Unconditionally
+      # running `apt-get update && install` hung this job twice (65 min and
+      # counting on a step that does ~2 min of work), so only reach for apt when
+      # something is genuinely missing, and bound it.
       - name: system deps
+        timeout-minutes: 6
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg webp
+          need=""
+          command -v ffmpeg >/dev/null || need="$need ffmpeg"
+          command -v cwebp  >/dev/null || need="$need webp"
+          if [ -n "$need" ]; then
+            echo "installing:$need"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq $need
+          else
+            echo "ffmpeg and cwebp already present — skipping apt"
+          fi
+          ffmpeg -version | head -1
+          # Pillow is what makes the chain gate run at all; without it
+          # chain_rmse.py fails closed, so a missing install is loud, not silent.
           python3 -m pip install --quiet --break-system-packages Pillow
           python3 -c "import PIL; print('Pillow', PIL.__version__)"
 

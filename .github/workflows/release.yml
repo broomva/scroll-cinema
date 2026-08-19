@@ -1,0 +1,93 @@
+name: release
+
+# Publishes on a v* tag. Provenance requires id-token: write and a trusted
+# publisher (or NPM_TOKEN) configured on npm.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # A protected environment is what stops a tag from being a publish button.
+    # Configure it with required reviewers in Settings -> Environments.
+    environment: npm-publish
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need history to prove ancestry
+
+      # A tag can point at ANY commit, including one that never landed on the
+      # reviewed default branch. Without this, tag-creation rights are
+      # publish-to-npm rights.
+      - name: tag must be an ancestor of main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_SHA is not on origin/main — refusing to publish"
+            exit 1
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          # Trusted publishing needs npm >= 11.5.1; Node 22 ships npm 10.
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: npm version supports trusted publishing
+        run: |
+          npm i -g npm@latest
+          npm --version
+
+      # The same gates CI runs — a tag must not skip them.
+      - name: system deps
+        timeout-minutes: 6
+        run: |
+          need=""
+          command -v ffmpeg >/dev/null || need="$need ffmpeg"
+          command -v cwebp  >/dev/null || need="$need webp"
+          if [ -n "$need" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq $need
+          fi
+          python3 -m pip install --quiet --break-system-packages Pillow
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+      - run: bun run cinema:demo
+      - run: |
+          bash scripts/link-demo-assets.sh .cinema-demo
+          bun run dogfood
+
+      - name: version matches tag
+        run: |
+          PKG=$(node -p "require('./package.json').version")
+          TAG=${GITHUB_REF_NAME#v}
+          [ "$PKG" = "$TAG" ] || { echo "package.json $PKG != tag $TAG"; exit 1; }
+
+      # Verify the PACKED artifact, not the source tree: prepack builds dist/,
+      # and a clean checkout has none until it does.
+      - name: the tarball installs and imports
+        run: |
+          npm pack
+          mkdir -p /tmp/verify && cd /tmp/verify && npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE"/broomva-scroll-cinema-*.tgz
+          node -e "
+            const p = require('@broomva/scroll-cinema/package.json');
+            import('@broomva/scroll-cinema').then((m) => {
+              for (const n of ['createScrollCinema','placement','bindTargets','slotFor','easeToward','fadeAt','timeFor','shouldSeek','residentSet','trackProgress','clamp','clamp01']) {
+                if (typeof m[n] !== 'function') throw new Error('missing export: ' + n);
+              }
+              console.log('packed artifact ok:', p.name, p.version);
+            });
+          "
+          test -f node_modules/@broomva/scroll-cinema/SKILL.md
+          test -f node_modules/@broomva/scroll-cinema/scripts/conform.sh
+
+      - run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

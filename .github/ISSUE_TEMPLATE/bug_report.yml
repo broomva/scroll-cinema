@@ -1,0 +1,41 @@
+name: Bug report
+description: Something behaves differently than documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: please run `bun run check` and, if the issue is about
+        playback, `bun run dogfood`. Their output is usually the fastest way to
+        tell a runtime bug from an asset problem.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what happened instead.
+    validations: { required: true }
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction
+      description: >
+        Ideally a storyboard or clip set that shows it. `bun run cinema:demo`
+        produces a shareable set offline with no API key.
+    validations: { required: true }
+  - type: textarea
+    id: gates
+    attributes:
+      label: Gate output
+      description: Paste the relevant output from check / dogfood / conform --verify-only.
+      render: shell
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "@broomva/scroll-cinema 0.2.0"
+    validations: { required: true }
+  - type: input
+    id: env
+    attributes:
+      label: Browser and OS
+      placeholder: "Chrome 140 / macOS 15"
