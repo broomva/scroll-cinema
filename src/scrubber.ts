@@ -16,6 +16,7 @@ import {
   fadeAt,
   placement,
   residentSet,
+  shouldReveal,
   shouldSeek,
   slotFor,
   timeFor,
@@ -57,6 +58,11 @@ export interface ScrollCinemaOptions {
   reducedMotion?: boolean;
   /** Injectable for tests. */
   view?: Window;
+  /**
+   * How long to wait for a compositor-confirmed frame before revealing anyway.
+   * Fail-open: a stale frame beats a page that never shows video.
+   */
+  revealTimeoutMs?: number;
 }
 
 export interface ScrollCinemaDebug {
@@ -190,8 +196,15 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
    * deadband) rather than picked, so it tracks the configured frame rate.
    */
   const REVEAL_TOLERANCE = seekEpsilon * 4;
-  /** Give up waiting for a compositor confirmation after this long. */
-  const REVEAL_TIMEOUT_MS = 1500;
+  /**
+   * Wait this long for a compositor-confirmed frame before showing anyway.
+   *
+   * 1500ms is empirical: long enough that a seek-and-paint on a slow decoder
+   * finishes well inside it, short enough that a viewer is not left staring at
+   * a poster wondering if the page broke. An option because that balance is a
+   * product decision, not a universal constant.
+   */
+  const revealTimeoutMs = options.revealTimeoutMs ?? 1500;
   /** When each slot was last bound, for the reveal deadline. */
   const bindAt: number[] = [0, 0];
 
@@ -524,20 +537,19 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     // be showing the pre-seek frame, which is how a slot could appear displaying
     // a moment a second away from where the viewer is. Once shown, staleness is
     // allowed -- blanking mid-scrub would be far worse.
-    if (!revealed[slot] && rvfcSupported) {
-      const painted = lastPaintedTime[slot];
-      const confirmed =
-        Number.isFinite(painted) && Math.abs(painted - t) > REVEAL_TOLERANCE;
-      // rVFC only fires when a frame is submitted for composition and promises
-      // no timing. Waiting on it unconditionally means a slot that never gets an
-      // acceptable callback stays invisible FOREVER -- a silent black page.
-      // After the deadline, fall back to the `seeked` gate: a briefly stale
-      // frame beats no video at all.
-      const waitedTooLong = performance.now() - (bindAt[slot] || 0) > REVEAL_TIMEOUT_MS;
-      if (confirmed && !waitedTooLong) {
-        v.style.opacity = "0";
-        return;
-      }
+    if (
+      !revealed[slot] &&
+      rvfcSupported &&
+      !shouldReveal(
+        lastPaintedTime[slot],
+        t,
+        REVEAL_TOLERANCE,
+        performance.now() - (bindAt[slot] || 0),
+        revealTimeoutMs,
+      )
+    ) {
+      v.style.opacity = "0";
+      return;
     }
 
     const shown = clamp01(opacity);
