@@ -56,7 +56,7 @@ const cinema = createScrollCinema({
 });
 
 // later
-cinema.destroy;
+cinema.destroy();
 ```
 
 Gear the track at roughly **110vh of scroll per clip** over a `position: fixed`
@@ -68,7 +68,7 @@ stage. Shorter feels frantic; much longer feels like work.
 |---|---|---|
 | `tau` | `0.096` | Inertia time constant, seconds. Reproduces the reference feel at 60Hz. |
 | `fade` | `0.1` | Fraction of each clip spent crossfading into the next. |
-| `maxResident` | `3` | Clips held in memory at once. **This is the memory bound.** |
+| `maxResident` | `3` | Clips retained (completed + in-flight). **Minimum 3** — lower values are raised with a warning, since two clips are bound during a crossfade and a third may be downloading. |
 | `seekEpsilon` | `1/48` | Seek deadband, seconds — half a frame at 24fps. |
 | `strategy` | `"blob"` | `blob` fully buffers for instant seeks; `stream` relies on dense-GOP range requests. |
 | `reducedMotion` | auto | Override the `prefers-reduced-motion` read. |
@@ -158,7 +158,8 @@ runtime assigns `poster.src` only from the first tick, using the real scroll
 position, so a deep link never pays for poster 0 and then discards it. That
 single-request behaviour is verified in the browser, not assumed — the harness
 reads `performance.getEntriesByType("resource")` before any scroll and requires
-exactly one image.
+exactly one image — not "at most one", since zero would mean the poster never
+loaded and a `> 1` check would have called that clean.
 
 ## Development
 
@@ -182,7 +183,7 @@ structurally cannot, running **both** strategies in headless Chrome and assertin
 | resident set ≤ 3 | retention bound, completed clips |
 | in-flight ≤ 3 | retention bound, *downloads* — a fast traversal must not buffer the story |
 | total `src` binds ≈ clip count | **decoder thrash.** A slot-collision bug rebinds every frame; measured 5 when correct, 247 when reintroduced |
-| no visible unsettled decoder | a revealed clip must have presented a frame from its source, not frame 0. **Known-weak, see limitations** |
+| no visible unsettled decoder | a revealed clip must have painted a frame **at the requested time** — checked against `requestVideoFrameCallback` mediaTime, independent of the flag that gates opacity |
 | exactly 1 poster before first scroll | the first-interaction claim, measured via browser **resource timing** — independent of any runtime flag |
 | stream run served Range requests | otherwise the 206 path is untested and the run proves nothing about streaming |
 

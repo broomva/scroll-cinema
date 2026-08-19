@@ -20,8 +20,18 @@ import sys, os
 try:
     from PIL import Image
 except ImportError:
-    print("chain_rmse: Pillow not installed (pip install Pillow) — SKIPPED, not verified")
-    sys.exit(0)
+    # FAIL CLOSED. Exiting 0 here made `cinema.mjs verify` print "passes every
+    # gate" while the only check that can catch a provider ignoring the
+    # end-frame parameter had not run at all. A gate that cannot run is a gate
+    # that failed, not one that passed.
+    print(
+        "chain_rmse: Pillow is required to verify the keyframe chain and is not "
+        "installed.\n"
+        "            pip install Pillow   (or: python3 -m pip install --user Pillow)\n"
+        "FAIL  chain endpoints: NOT VERIFIED",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 
 MAX_RMSE = 26.0   # a real endpoint match; codec + resample noise sits well under this
 MIN_RATIO = 2.0   # predicted match must beat the runner-up by at least this factor

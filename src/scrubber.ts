@@ -76,6 +76,8 @@ export interface ScrollCinemaDebug {
    * gates opacity, and therefore cannot be used to check opacity.
    */
   framesPresented: number[];
+  /** mediaTime of the last compositor-painted frame per slot; NaN if none. */
+  lastPaintedTime: number[];
   /** Segments currently buffered. */
   resident: number[];
   /** Segments with a fetch in flight. */
@@ -163,6 +165,8 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
    * painted a frame -- giving the harness a source of truth it does not control.
    */
   const framesPresented: number[] = [0, 0];
+  /** mediaTime of the most recent compositor-painted frame, per slot. */
+  const lastPaintedTime: number[] = [Number.NaN, Number.NaN];
 
   const poster = doc.createElement("img");
   poster.className = "sc-poster";
@@ -208,9 +212,16 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       // rVFC is not in every lib.dom; degrade rather than fail where absent.
       const rvfc = (
         v as HTMLVideoElement & { requestVideoFrameCallback?: (cb: () => void) => number }
-      ).requestVideoFrameCallback?.bind(v);
+      ).requestVideoFrameCallback?.bind(v) as
+        | ((cb: (now: number, meta: { mediaTime?: number }) => void) => number)
+        | undefined;
       if (rvfc) {
-        const onFrame = () => {
+        // Record WHICH frame was painted, not just that one was. A freshly
+        // bound clip presents frame 0 immediately; counting that would let the
+        // harness accept a decoder showing the start of a clip the viewer is
+        // supposed to be in the middle of.
+        const onFrame = (_now?: number, meta?: { mediaTime?: number }) => {
+          lastPaintedTime[slot] = meta?.mediaTime ?? Number.NaN;
           framesPresented[slot]++;
           rvfc(onFrame);
         };
@@ -376,6 +387,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     held[slot] = segment;
     presented[slot] = false;
     framesPresented[slot] = 0;
+    lastPaintedTime[slot] = Number.NaN;
     binds[slot]++;
     const v = videos[slot];
     v.style.opacity = "0";
@@ -400,14 +412,18 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       held[slot] = null;
       presented[slot] = false;
       framesPresented[slot] = 0;
+      lastPaintedTime[slot] = Number.NaN;
       const v = videos[slot];
       v.style.opacity = "0";
-      // If nothing is about to take this slot, drop the media too rather than
-      // leave a decoder holding a buffer for a clip that has left the window.
-      if (!targets.some((t) => slotFor(t) === slot)) {
-        v.removeAttribute("src");
-        v.load();
-      }
+      // Unload UNCONDITIONALLY. An earlier version only detached when no
+      // replacement was inbound -- but on a multi-segment snap both
+      // replacements map onto the two existing slots, so that condition was
+      // false for both and neither decoder ever let go. Clearing `held` alone
+      // merely removed the clip from the cache accounting while the decoder
+      // still owned the bytes: the reported number improved and the actual
+      // residency did not. The poster covers the reload gap.
+      v.removeAttribute("src");
+      v.load();
     }
   }
 
@@ -547,6 +563,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         held: [...held],
         settled: [...presented],
         framesPresented: [...framesPresented],
+        lastPaintedTime: [...lastPaintedTime],
         resident: [...cache.keys()].map(Number).sort((a, b) => a - b),
         inFlight: [...inFlight.keys()].sort((a, b) => a - b),
         times: videos.map((v) => v.currentTime),

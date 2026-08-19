@@ -266,7 +266,14 @@ async function build() {
 
   console.log("\nnext:");
   console.log(`  node pipeline/cinema.mjs verify ${out}`);
-  console.log(`  scripts/link-demo-assets.sh ${out} && bun run dogfood`);
+  // link-demo-assets/dogfood drive demo/, which is not in the published
+  // package -- printing them unconditionally tells an installed user to run
+  // something they do not have.
+  if (existsSync(join(ROOT, "demo"))) {
+    console.log(`  scripts/link-demo-assets.sh ${out} && bun run dogfood`);
+  } else {
+    console.log(`  feed manifest.clips / manifest.posters to createScrollCinema()`);
+  }
 }
 
 const rel = (root, p) => p.replace(`${root}/`, "");

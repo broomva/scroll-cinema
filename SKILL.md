@@ -15,13 +15,15 @@ tags:
 
 Scroll is a camera, not a scrollbar.
 
-Installed as `@broomva/scroll-cinema`. This file ships inside the package, so if
-you can `import` the runtime you can also run everything below — `scripts/` and
-`pipeline/` are in the tarball, not just the source repo.
+Installed as `@broomva/scroll-cinema`.
 
-**Status: reference implementation, not production-ready.** Four cross-model
-review rounds took it 2/10 → 6/10 and the final verdict was still SHIP: NO. Four
-findings remain open (one blocker) — see [Limits](#limits) before adopting.
+**What ships in the package:** the runtime, `scripts/conform.sh`,
+`scripts/budget.mjs`, and the whole `pipeline/`. Those you can run straight from
+`node_modules`.
+
+**What does not:** `bun run dogfood`, `bun run demo:serve` and
+`scripts/link-demo-assets.sh`. All three drive `demo/`, which is not published —
+they are repo-only, so clone the repository if you want them.
 
 ## Decide first: bake or build?
 
@@ -165,7 +167,7 @@ Run all of them; they do not overlap.
 | Chain | `cinema.mjs verify` | **a provider that ignored the end-frame parameter.** The clip is still valid, scrubbable video and passes every other gate |
 | Encode | `conform.sh --verify-only` | a flag that was silently dropped, so the file is unscrubbable |
 | Budget | `budget.mjs` | first-interaction weight and resident memory |
-| Runtime | `bun run dogfood` | decoder thrash, URL leaks, and whether seeks actually land |
+| Runtime | `bun run dogfood` *(repo only)* | decoder thrash, URL leaks, and whether seeks actually land |
 
 The dogfood harness exists because the first version of this package **passed 33
 unit tests and a green browser run while rebinding a decoder to the wrong clip

@@ -23,7 +23,8 @@
     "dogfood": "bun run demo:build && node scripts/dogfood.mjs && node scripts/dogfood.mjs --stream",
     "lint": "biome check src test tests",
     "lint:fix": "biome check --write src test tests",
-    "prepublishOnly": "bun run check && bun run build",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run check",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

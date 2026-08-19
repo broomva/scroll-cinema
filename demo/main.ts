@@ -114,6 +114,9 @@ const peaks = {
   /** Total compositor frames observed; 0 means rVFC is unavailable, not clean. */
   framesSeen: 0,
   samples: 0,
+  worstLag: null as null | {
+    slot: number; painted: number; want: number; lag: number; opacity: number; frames: number;
+  },
 };
 
 function observe(c: ScrollCinema): void {
@@ -127,8 +130,36 @@ function observe(c: ScrollCinema): void {
   // A visible slot must have had at least one frame actually painted by the
   // compositor for its CURRENT source. framesPresented resets on every rebind,
   // so a stale count cannot satisfy this.
-  if (d.opacity.some((o, i) => o > 0 && (d.framesPresented[i] ?? 0) === 0)) {
+  // The invariant is NOT "the painted frame matches the requested time" -- the
+  // runtime deliberately keeps showing a slightly stale frame rather than
+  // blanking during a scrub, and on a snap that staleness can reach seconds.
+  // Measured worst case: painted 4.96s while asking for 2.92s. That is the
+  // documented tradeoff, not a defect.
+  //
+  // What must never happen is revealing a slot that is showing the OPENING of a
+  // clip while the viewer is deep inside it -- the freshly-bound-at-frame-0
+  // flash that the reveal gate exists to prevent.
+  if (
+    d.opacity.some((o, i) => {
+      if (o <= 0) return false;
+      if ((d.framesPresented[i] ?? 0) === 0) return true;
+      const painted = d.lastPaintedTime[i];
+      if (!Number.isFinite(painted)) return true;
+      return (d.times[i] ?? 0) > 1.0 && painted < 0.25;
+    })
+  ) {
     peaks.visibleUnpresented++;
+    // Capture the worst case so a failure says WHAT was on screen, not just
+    // how often. Without this the count is unactionable.
+    d.opacity.forEach((o, i) => {
+      if (o <= 0) return;
+      const painted = d.lastPaintedTime[i];
+      const want = d.times[i] ?? 0;
+      const lag = Number.isFinite(painted) ? Math.abs(painted - want) : Number.POSITIVE_INFINITY;
+      if (lag > (peaks.worstLag?.lag ?? -1)) {
+        peaks.worstLag = { slot: i, painted, want, lag, opacity: o, frames: d.framesPresented[i] ?? 0 };
+      }
+    });
   }
   if (d.opacity.some((o, i) => o > 0 && !d.settled[i])) peaks.visibleUnsettled++;
 }
@@ -169,8 +200,10 @@ async function runSelfTest(c: ScrollCinema): Promise<void> {
     .getEntriesByType("resource")
     .filter((e) => e.name.endsWith(".webp")).length;
   report.postersBeforeScroll = postersBeforeScroll;
-  if (postersBeforeScroll > 1) {
-    failures.push(`${postersBeforeScroll} posters fetched before any scroll (expected 1)`);
+  // Exactly one, not "at most one": zero would mean the poster never loaded at
+  // all -- a failure -- and a `> 1` check would have called that clean.
+  if (postersBeforeScroll !== 1) {
+    failures.push(`${postersBeforeScroll} posters fetched before any scroll (expected exactly 1)`);
   }
 
   const samples: ReturnType<ScrollCinema["debug"]>[] = [];
