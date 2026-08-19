@@ -130,22 +130,21 @@ function observe(c: ScrollCinema): void {
   // A visible slot must have had at least one frame actually painted by the
   // compositor for its CURRENT source. framesPresented resets on every rebind,
   // so a stale count cannot satisfy this.
-  // The invariant is NOT "the painted frame matches the requested time" -- the
-  // runtime deliberately keeps showing a slightly stale frame rather than
-  // blanking during a scrub, and on a snap that staleness can reach seconds.
-  // Measured worst case: painted 4.96s while asking for 2.92s. That is the
-  // documented tradeoff, not a defect.
+  // THE INVARIANT: the first frame a bind generation shows must be the frame it
+  // was asked for. After that first reveal, staleness is deliberate policy --
+  // the runtime keeps a stale frame up rather than blanking mid-scrub -- so it
+  // is not measured here.
   //
-  // What must never happen is revealing a slot that is showing the OPENING of a
-  // clip while the viewer is deep inside it -- the freshly-bound-at-frame-0
-  // flash that the reveal gate exists to prevent.
+  // The tolerance is derived, not invented: seekEpsilon is the runtime's own
+  // "half a frame" deadband, so 4x it is ~2 frames of slack. An earlier version
+  // used bare 0.25s/1.0s constants, which silently accepted painted=0.25 at
+  // requested=4.02 and never checked clips shorter than a second.
+  const REVEAL_TOLERANCE = (1 / 48) * 4; // mirrors the runtime's seekEpsilon * 4
   if (
-    d.opacity.some((o, i) => {
-      if (o <= 0) return false;
-      if ((d.framesPresented[i] ?? 0) === 0) return true;
-      const painted = d.lastPaintedTime[i];
-      if (!Number.isFinite(painted)) return true;
-      return (d.times[i] ?? 0) > 1.0 && painted < 0.25;
+    d.revealLag.some((lag, i) => {
+      if (d.held[i] === null) return false;
+      if (Number.isNaN(lag)) return false; // not revealed yet
+      return !(lag <= REVEAL_TOLERANCE);   // NaN/Infinity fail
     })
   ) {
     peaks.visibleUnpresented++;
@@ -155,7 +154,8 @@ function observe(c: ScrollCinema): void {
       if (o <= 0) return;
       const painted = d.lastPaintedTime[i];
       const want = d.times[i] ?? 0;
-      const lag = Number.isFinite(painted) ? Math.abs(painted - want) : Number.POSITIVE_INFINITY;
+      const lag = d.revealLag[i];
+      if (Number.isNaN(lag)) return;
       if (lag > (peaks.worstLag?.lag ?? -1)) {
         peaks.worstLag = { slot: i, painted, want, lag, opacity: o, frames: d.framesPresented[i] ?? 0 };
       }

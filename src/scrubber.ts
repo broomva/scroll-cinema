@@ -78,6 +78,8 @@ export interface ScrollCinemaDebug {
   framesPresented: number[];
   /** mediaTime of the last compositor-painted frame per slot; NaN if none. */
   lastPaintedTime: number[];
+  /** |painted - requested| when each bind generation first became visible. */
+  revealLag: number[];
   /** Segments currently buffered. */
   resident: number[];
   /** Segments with a fetch in flight. */
@@ -167,6 +169,27 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
   const framesPresented: number[] = [0, 0];
   /** mediaTime of the most recent compositor-painted frame, per slot. */
   const lastPaintedTime: number[] = [Number.NaN, Number.NaN];
+  /**
+   * |painted - requested| at the FIRST frame each bind generation became
+   * visible, or NaN if it has not been revealed yet.
+   *
+   * This is the moment the reveal gate exists to protect: a slot must not
+   * appear showing a frame other than the one it was asked for. Staleness
+   * AFTER that first reveal is deliberate -- the runtime keeps a stale frame up
+   * rather than blanking mid-scrub -- so measuring it continuously would flag
+   * intended behaviour.
+   */
+  const revealLag: number[] = [Number.NaN, Number.NaN];
+  /** True once a bind generation has been shown; staleness is allowed after. */
+  const revealed: boolean[] = [false, false];
+  /** Whether the browser gives us compositor frame callbacks at all. */
+  let rvfcSupported = false;
+  /**
+   * How close the painted frame must be to the requested one before a slot is
+   * first shown. Derived from `seekEpsilon` (the runtime's own half-a-frame
+   * deadband) rather than picked, so it tracks the configured frame rate.
+   */
+  const REVEAL_TOLERANCE = seekEpsilon * 4;
 
   const poster = doc.createElement("img");
   poster.className = "sc-poster";
@@ -216,6 +239,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         | ((cb: (now: number, meta: { mediaTime?: number }) => void) => number)
         | undefined;
       if (rvfc) {
+        rvfcSupported = true;
         // Record WHICH frame was painted, not just that one was. A freshly
         // bound clip presents frame 0 immediately; counting that would let the
         // harness accept a decoder showing the start of a clip the viewer is
@@ -388,6 +412,8 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
     presented[slot] = false;
     framesPresented[slot] = 0;
     lastPaintedTime[slot] = Number.NaN;
+    revealLag[slot] = Number.NaN;
+    revealed[slot] = false;
     binds[slot]++;
     const v = videos[slot];
     v.style.opacity = "0";
@@ -413,6 +439,8 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
       presented[slot] = false;
       framesPresented[slot] = 0;
       lastPaintedTime[slot] = Number.NaN;
+      revealLag[slot] = Number.NaN;
+      revealed[slot] = false;
       const v = videos[slot];
       v.style.opacity = "0";
       // Unload UNCONDITIONALLY. An earlier version only detached when no
@@ -484,7 +512,27 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         return;
       }
     }
-    v.style.opacity = String(clamp01(opacity));
+    // FIRST reveal must wait for a compositor-confirmed frame at the requested
+    // position. `seeked` only says the seek completed; the compositor may still
+    // be showing the pre-seek frame, which is how a slot could appear displaying
+    // a moment a second away from where the viewer is. Once shown, staleness is
+    // allowed -- blanking mid-scrub would be far worse.
+    if (!revealed[slot] && rvfcSupported) {
+      const painted = lastPaintedTime[slot];
+      if (!Number.isFinite(painted) || Math.abs(painted - t) > REVEAL_TOLERANCE) {
+        v.style.opacity = "0";
+        return;
+      }
+    }
+
+    const shown = clamp01(opacity);
+    if (shown > 0) revealed[slot] = true;
+    if (shown > 0 && Number.isNaN(revealLag[slot])) {
+      revealLag[slot] = Number.isFinite(lastPaintedTime[slot])
+        ? Math.abs(lastPaintedTime[slot] - v.currentTime)
+        : Number.POSITIVE_INFINITY;
+    }
+    v.style.opacity = String(shown);
   }
 
   function tick(now: number): void {
@@ -564,6 +612,7 @@ export function createScrollCinema(options: ScrollCinemaOptions): ScrollCinema {
         settled: [...presented],
         framesPresented: [...framesPresented],
         lastPaintedTime: [...lastPaintedTime],
+        revealLag: [...revealLag],
         resident: [...cache.keys()].map(Number).sort((a, b) => a - b),
         inFlight: [...inFlight.keys()].sort((a, b) => a - b),
         times: videos.map((v) => v.currentTime),
