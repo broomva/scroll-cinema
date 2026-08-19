@@ -21,7 +21,7 @@ jobs:
       # counting on a step that does ~2 min of work), so only reach for apt when
       # something is genuinely missing, and bound it.
       - name: system deps
-        timeout-minutes: 6
+        timeout-minutes: 12
         run: |
           need=""
           command -v ffmpeg >/dev/null || need="$need ffmpeg"
@@ -29,7 +29,7 @@ jobs:
           if [ -n "$need" ]; then
             echo "installing:$need"
             sudo apt-get update -qq
-            sudo apt-get install -y -qq $need
+            sudo apt-get install -y -qq --no-install-recommends $need
           else
             echo "ffmpeg and cwebp already present — skipping apt"
           fi
