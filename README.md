@@ -3,6 +3,16 @@
 Scroll-driven cinematic video scrubbing. Two decoders, bounded memory,
 frame-rate-independent easing.
 
+```bash
+npm i @broomva/scroll-cinema     # or: bun add @broomva/scroll-cinema
+```
+
+The package ships `SKILL.md` alongside the code, so an agent that installs it
+also gets the usage contract — the decision rule, the asset invariant, and the
+gate table — without being told separately. `scripts/conform.sh`,
+`scripts/budget.mjs` and the whole `pipeline/` are in the tarball and runnable
+from `node_modules`.
+
 Reverse-engineered from `amirmushichge/tea-leaf-scroll-world` and rebuilt
 without its four defects. Full analysis, measurements and art-direction notes:
 [`docs/specs/2026-08-17-scroll-cinema-playbook.html`](../../docs/specs/2026-08-17-scroll-cinema-playbook.html)
