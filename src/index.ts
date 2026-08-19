@@ -1,5 +1,6 @@
 export type { Placement } from "./map.js";
 export {
+  bindTargets,
   clamp,
   clamp01,
   easeToward,

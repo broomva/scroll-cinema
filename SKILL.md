@@ -15,6 +15,10 @@ tags:
 
 Scroll is a camera, not a scrollbar.
 
+Installed as `@broomva/scroll-cinema`. This file ships inside the package, so if
+you can `import` the runtime you can also run everything below — `scripts/` and
+`pipeline/` are in the tarball, not just the source repo.
+
 **Status: reference implementation, not production-ready.** Four cross-model
 review rounds took it 2/10 → 6/10 and the final verdict was still SHIP: NO. Four
 findings remain open (one blocker) — see [Limits](#limits) before adopting.

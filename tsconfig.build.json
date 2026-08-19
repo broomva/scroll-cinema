@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    // The base config allows importing .ts extensions, which is incompatible
+    // with emitting. Source already uses .js specifiers, so emit is clean.
+    "allowImportingTsExtensions": false,
+    "types": []
+  },
+  "include": ["src"]
+}
