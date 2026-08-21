@@ -4,6 +4,20 @@ All notable changes to this project are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Documented interop with GSAP / ScrollTrigger and smooth-scroll libraries,
+  with measured numbers rather than reasoning. `node scripts/dogfood.mjs
+  --lenis --tau <n>` reproduces them; Lenis is a devDependency for that test
+  only and is never shipped.
+
+### Notes
+- Setting `tau: 0` alongside Lenis to "avoid double smoothing" is wrong and now
+  documented as such: 85/812 first-reveal violations against 0 at `tau: 0.03`
+  or the default. `tau` is what lets the requested time converge so the decoder
+  can land on a frame — not only a feel knob.
+
 ## [0.2.0] — 2026-08-19
 
 First public release.

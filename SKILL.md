@@ -157,6 +157,53 @@ Gear the track at roughly **110vh of scroll per clip** over a `position: fixed`
 stage. Shorter feels frantic; much longer feels like work. Options and defaults
 are in the README.
 
+## Using it with GSAP, Lenis, or another scroll library
+
+**It has no runtime dependencies and does not replace any of them.** They operate
+at a different layer: GSAP and ScrollTrigger animate arbitrary properties on a
+timeline, Lenis smooths the page's scroll position. This package turns a scroll
+position into a decoded video frame, and owns the parts those libraries have no
+opinion about — dense-GOP encoding, decoder count, resident memory, and reveal
+timing against compositor frames.
+
+You can absolutely drive `video.currentTime` from a ScrollTrigger tween. That
+mapping is about fifteen lines either way; it was never the hard part.
+
+### With a smooth-scroll library (Lenis, Locomotive)
+
+It works without configuration. The runtime reads
+`track.getBoundingClientRect()` every animation frame rather than listening for
+scroll events, so a transform-based virtual scroller moves the rect and the
+mapping follows without knowing the library exists.
+
+**Do not set `tau: 0` to "avoid double smoothing".** That is the obvious move
+and it is wrong. Measured against Lenis 1.3, five clips, ~810 sampled frames:
+
+| configuration | first-reveal violations |
+|---|---|
+| Lenis + `tau: 0` | **85 / 812 — fails** |
+| Lenis + `tau: 0.03` | 0 |
+| Lenis + `tau: 0.096` (default) | 0 |
+
+`tau` is not only a feel knob. It is what lets the requested time *converge*, so
+the decoder can land on a frame and the reveal gate can confirm it. With `tau: 0`
+the target moves every frame, confirmation never happens, and the liveness
+deadline eventually reveals a stale frame instead.
+
+So: keep the default, or lower it to taste. `0.03` still passes and feels
+tighter under Lenis, which is already doing its own smoothing. Zero does not.
+
+### With GSAP / ScrollTrigger
+
+Let ScrollTrigger own the trigger and pinning if you already use it, and give
+this the resulting progress — `track` is optional, and the runtime falls back to
+document scroll when it is absent. Do not tween `currentTime` yourself in
+parallel: two writers fighting over the same property produces exactly the
+decoder thrash the `src`-bind counter in `bun run dogfood` exists to catch.
+
+Reproduce the numbers above with `node scripts/dogfood.mjs --lenis --tau 0`
+(Lenis is a devDependency for this test only and is never shipped).
+
 ## Gates — and what each one uniquely catches
 
 Run all of them; they do not overlap.

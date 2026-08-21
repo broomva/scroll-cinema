@@ -19,6 +19,8 @@ import { extname, join, normalize, resolve } from "node:path";
 
 const ROOT = resolve(new URL("..", import.meta.url).pathname);
 const STRATEGY = process.argv.includes("--stream") ? "stream" : "blob";
+const LENIS = process.argv.includes("--lenis");
+const TAU = (() => { const i = process.argv.indexOf("--tau"); return i >= 0 ? process.argv[i + 1] : null; })();
 const DEMO = join(ROOT, "demo");
 const PORT = 8788 + (process.pid % 200);
 
@@ -129,7 +131,7 @@ const args = [
   "--autoplay-policy=no-user-gesture-required",
   "--window-size=1280,900",
   `--user-data-dir=${join(ROOT, "node_modules", ".dogfood-profile")}`,
-  `http://127.0.0.1:${PORT}/index.html?selftest=1&strategy=${STRATEGY}`,
+  `http://127.0.0.1:${PORT}/index.html?selftest=1&strategy=${STRATEGY}${LENIS ? "&lenis=1" : ""}${TAU !== null ? `&tau=${TAU}` : ""}`,
 ];
 
 const keep = process.argv.includes("--keep");
@@ -163,7 +165,7 @@ try {
 }
 
 const s = report.samples ?? [];
-console.log(`\nstrategy          : ${report.strategy}`);
+console.log(`\nstrategy          : ${report.strategy}${report.lenis ? `  (Lenis on, tau=${report.tau})` : ""}`);
 console.log(`first clip loaded : ${report.firstClipLoaded}`);
 console.log(`samples           : ${s.length}`);
 console.log(`segments visited  : ${(report.segments ?? []).join(" -> ")}`);
