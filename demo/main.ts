@@ -72,8 +72,33 @@ const label = document.querySelector<HTMLElement>("#scene");
 
 if (!stage || !track) throw new Error("demo: missing #stage or #track");
 
+/**
+ * Optional Lenis smooth-scroll, for the interop test only (`?lenis=1`).
+ *
+ * Lenis is a devDependency and is NOT part of the package: the runtime has zero
+ * runtime dependencies. This exists so the documented interop advice is
+ * measured rather than reasoned about.
+ */
+async function maybeLenis(): Promise<boolean> {
+  if (!new URLSearchParams(location.search).has("lenis")) return false;
+  const { default: Lenis } = await import("lenis");
+  const lenis = new Lenis({ autoRaf: false });
+  const loop = (t: number) => {
+    lenis.raf(t);
+    requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
+  return true;
+}
+
 const strategy =
   new URLSearchParams(location.search).get("strategy") === "stream" ? "stream" : "blob";
+
+const lenisActive = await maybeLenis();
+// `tau` is overridable so the Lenis interop advice can be MEASURED across
+// values rather than assumed. See the interop section in the README.
+const tauParam = new URLSearchParams(location.search).get("tau");
+const tau = tauParam !== null ? Number(tauParam) : undefined;
 
 const assets = await loadAssets();
 const CLIPS = assets.clips;
@@ -87,6 +112,7 @@ const cinema = createScrollCinema({
   stage,
   track,
   strategy,
+  ...(tau !== undefined ? { tau } : {}),
   onScene: (scene) => {
     if (label) {
       label.textContent = `${String(scene + 1).padStart(2, "0")} · ${SCENES[scene] ?? ""}`;
@@ -186,7 +212,7 @@ async function waitForFirstClip(c: ScrollCinema, timeoutMs = 30_000): Promise<bo
 }
 
 async function runSelfTest(c: ScrollCinema): Promise<void> {
-  const report: Record<string, unknown> = { strategy };
+  const report: Record<string, unknown> = { strategy, lenis: lenisActive, tau: tau ?? "default" };
   const failures: string[] = [];
 
   const loaded = await waitForFirstClip(c);
